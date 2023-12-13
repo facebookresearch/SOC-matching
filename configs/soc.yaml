@@ -1,0 +1,58 @@
+defaults:
+  - override hydra/launcher: submitit_slurm
+
+task: 1
+
+method:
+  T: 1.0
+  num_steps: 50
+  lmbd: 1.0
+  gamma: 0.2
+  task_id: None
+  d: 20
+  use_gpu: True
+  algorithm: 'SOCM' 
+  setting: 'OU_quadratic_easy'
+  seed: 0
+  device: 'cuda'
+  num_iterations: 40000
+  num_iterations_splines: 15000
+  delta_t_optimal: 0.002
+  delta_x_optimal: 0.002
+  scaling_factor_nabla_V: 1.0
+  scaling_factor_M: 1.0
+  compute_control_objective_every: 5000
+  n_samples_control: 65536
+  use_warm_start: False
+  num_splines: 1
+
+arch:
+  hdims: [256, 128, 64] 
+  hdims_M: [128, 128]
+
+optim:
+  nabla_V_lr: 1e-4
+  M_lr: 1e-2
+  y0_lr: 1e-2
+  splines_lr: 2e-4
+  adam_eps: 1e-4
+  batch_size: 128  
+
+hydra:
+  job:
+    chdir: True
+  run:
+    dir: ./outputs/runs 
+  sweep:
+    dir: ./outputs/multiruns 
+    subdir: ${hydra.job.num}
+  launcher:
+    max_num_timeout: 100000
+    timeout_min: 4319
+    cpus_per_task: 10
+    gpus_per_node: 1
+    mem_per_gpu: 30gb
+    tasks_per_node: ${hydra.launcher.gpus_per_node}
+    nodes: 1
+    partition: learnlab
+    exclude: learnfair[5025-5028,5041-5316,7456-7735]
