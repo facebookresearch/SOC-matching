@@ -176,22 +176,27 @@ def main(cfg: DictConfig):
         last_algorithm['EMA_norm_sqd_diff'] = 7
         last_algorithm['EMA_grad_norm_sqd'] = 7
         last_algorithm['control_objective_mean'] = 6
+        title = r'Quadratic Ornstein Uhlenbeck, easy ($d=20$)'
     elif cfg.method.setting == 'OU_quadratic_hard' and cfg.method.use_warm_start:
         last_algorithm['EMA_norm_sqd_diff'] = 7
         last_algorithm['EMA_grad_norm_sqd'] = 7
         last_algorithm['control_objective_mean'] = 6
+        title = r'Quadratic Ornstein Uhlenbeck, hard, warm start ($d=20$)'
     elif cfg.method.setting == 'OU_quadratic_hard' and not cfg.method.use_warm_start:
         last_algorithm['EMA_norm_sqd_diff'] = 7
         last_algorithm['EMA_grad_norm_sqd'] = 6
         last_algorithm['control_objective_mean'] = 6
+        title = r'Quadratic Ornstein Uhlenbeck, hard, no warm start ($d=20$)'
     elif cfg.method.setting == 'OU_linear':
         last_algorithm['EMA_norm_sqd_diff'] = 7
         last_algorithm['EMA_grad_norm_sqd'] = 7
         last_algorithm['control_objective_mean'] = 6
+        title = r'Linear Ornstein Uhlenbeck ($d=10$)'
     elif cfg.method.setting == 'double_well':
         last_algorithm['EMA_norm_sqd_diff'] = 7
         last_algorithm['EMA_grad_norm_sqd'] = 7
         last_algorithm['control_objective_mean'] = 6
+        title = r'Double Well ($d=10$)'
 
     if cfg.method.setting == 'OU_quadratic_hard' and not cfg.method.use_warm_start:
         set_ylims = True
