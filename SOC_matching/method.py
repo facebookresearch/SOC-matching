@@ -41,7 +41,6 @@ class NeuralSDE(torch.nn.Module):
         self.lmbd = lmbd
         self.sigma = sigma
         self.gamma = gamma
-        self.R_inverse = torch.matmul(self.sigma, torch.transpose(self.sigma, 0, 1))
         self.scaling_factor_nabla_V = scaling_factor_nabla_V
         self.scaling_factor_M = scaling_factor_M
         self.use_learned_control = False
@@ -60,8 +59,7 @@ class NeuralSDE(torch.nn.Module):
                 tx = torch.cat([t_expand, x], dim=-1)
                 learned_control = -torch.einsum(
                     "ij,bj->bi",
-                    # torch.transpose(self.sigma, 0, 1),
-                    self.R_inverse,
+                    torch.transpose(self.sigma, 0, 1),
                     self.nabla_V(tx).reshape(x.shape),
                 )
                 if verbose:
@@ -85,8 +83,7 @@ class NeuralSDE(torch.nn.Module):
 
                 learned_control = -torch.einsum(
                     "ij,abj->abi",
-                    # torch.transpose(self.sigma, 0, 1),
-                    self.R_inverse,
+                    torch.transpose(self.sigma, 0, 1),
                     nabla_V,
                 )
                 if verbose:
@@ -150,8 +147,6 @@ class SOC_Solver(nn.Module):
         self.d = d
         self.y0 = torch.nn.Parameter(torch.randn(1, device=x0.device))
         self.sigma = sigma
-        self.R_inverse = torch.matmul(self.sigma, torch.transpose(self.sigma, 0, 1))
-        self.R = torch.inverse(self.R_inverse)
 
     def control(self, t0, x0):
         x0 = x0.reshape(-1, self.dim)
