@@ -244,18 +244,12 @@ class FullyConnectedUNet(torch.nn.Module):
 
 
 class SigmoidMLP(torch.nn.Module):
-    # def __init__(self, dim=10, hdims=[32, 32, 4], gamma=3.0, scaling_factor=1.0):
     def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, scaling_factor=1.0):
         super().__init__()
 
         self.dim = dim
         self.gamma = gamma
         self.sigmoid_layers = nn.Sequential(
-            # nn.Linear(2, 128),
-            # nn.ReLU(),
-            # nn.Linear(128, 128),
-            # nn.ReLU(),
-            # nn.Linear(128, dim**2),
             nn.Linear(2, hdims[0]),
             nn.ReLU(),
             nn.Linear(hdims[0], hdims[1]),
