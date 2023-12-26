@@ -166,23 +166,48 @@ def main(cfg: DictConfig):
             eps=cfg.optim.adam_eps,
         )
     elif algorithm == "SOCM":
-        optimizer = torch.optim.Adam(
-            [{"params": soc_solver.neural_sde.nabla_V.parameters()}]
-            + [
-                {
-                    "params": soc_solver.neural_sde.M.sigmoid_layers.parameters(),
-                    "lr": cfg.optim.M_lr,
-                }
-            ]
-            + [
-                {
-                    "params": soc_solver.neural_sde.gamma,
-                    "lr": cfg.optim.M_lr,
-                }
-            ],
-            lr=cfg.optim.nabla_V_lr,
-            eps=cfg.optim.adam_eps,
-        )
+        if cfg.method.use_stopping_time:
+            optimizer = torch.optim.Adam(
+                [{"params": soc_solver.neural_sde.nabla_V.parameters()}]
+                + [
+                    {
+                        "params": soc_solver.neural_sde.M.sigmoid_layers.parameters(),
+                        "lr": cfg.optim.M_lr,
+                    }
+                ]
+                + [
+                    {
+                        "params": soc_solver.neural_sde.gamma,
+                        "lr": cfg.optim.M_lr,
+                    }
+                ]
+                + [
+                    {
+                        "params": soc_solver.neural_sde.gamma2,
+                        "lr": cfg.optim.M_lr,
+                    }
+                ],
+                lr=cfg.optim.nabla_V_lr,
+                eps=cfg.optim.adam_eps,
+            )
+        else:
+            optimizer = torch.optim.Adam(
+                [{"params": soc_solver.neural_sde.nabla_V.parameters()}]
+                + [
+                    {
+                        "params": soc_solver.neural_sde.M.sigmoid_layers.parameters(),
+                        "lr": cfg.optim.M_lr,
+                    }
+                ]
+                + [
+                    {
+                        "params": soc_solver.neural_sde.gamma,
+                        "lr": cfg.optim.M_lr,
+                    }
+                ],
+                lr=cfg.optim.nabla_V_lr,
+                eps=cfg.optim.adam_eps,
+            )
     elif algorithm == "rel_entropy":
         optimizer = torch.optim.Adam(
             soc_solver.parameters(), lr=cfg.optim.nabla_V_lr, eps=cfg.optim.adam_eps
@@ -256,6 +281,7 @@ def main(cfg: DictConfig):
                     verbose=verbose,
                     u_warm_start=u_warm_start,
                     use_warm_start=cfg.method.use_warm_start,
+                    use_stopping_time=cfg.method.use_stopping_time,
                 )
 
                 if compute_L2_error:

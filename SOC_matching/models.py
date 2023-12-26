@@ -274,3 +274,45 @@ class SigmoidMLP(torch.nn.Module):
             1 - 1 / exp_factor
         ) * sigmoid_layers_output
         return output
+    
+class TwoBoundarySigmoidMLP(torch.nn.Module):
+    def __init__(self, dim=10, hdims=[128, 128], gamma1=3.0, gamma2=3.0, #stopping_function=None, 
+                 scaling_factor=1.0):
+        super().__init__()
+
+        self.dim = dim
+        self.gamma1 = gamma1
+        self.gamma2 = gamma2
+        #self.stopping_function = stopping_function
+        self.sigmoid_layers = nn.Sequential(
+            nn.Linear(2, hdims[0]),
+            nn.ReLU(),
+            nn.Linear(hdims[0], hdims[1]),
+            nn.ReLU(),
+            nn.Linear(hdims[1], dim**2),
+        )
+
+        self.scaling_factor = scaling_factor
+        for m in self.sigmoid_layers:
+            if isinstance(m, nn.Linear):
+                m.weight.data *= self.scaling_factor
+                m.bias.data *= self.scaling_factor
+
+    def forward(self, t, s, stopping_function_output, init_stopping_function_output):
+        ts = torch.cat((t.unsqueeze(1), s.unsqueeze(1)), dim=1)
+        sigmoid_layers_output = self.sigmoid_layers(ts).reshape(-1, 1, self.dim, self.dim)
+        exp_factor_1 = (
+            torch.exp(self.gamma1 * (s - t)).unsqueeze(1).unsqueeze(2).unsqueeze(3)
+        )
+        identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)
+        # stopping_function_output = self.stopping_function(x) ## Finish
+        exp_factor_2 = (
+            torch.exp(self.gamma2 * stopping_function_output).unsqueeze(1).unsqueeze(2)
+        )
+        init_exp_factor_2 = (
+            torch.exp(self.gamma2 * init_stopping_function_output).unsqueeze(1).unsqueeze(2)
+        )
+        output = (1 / exp_factor_1) * (1 - (1 / exp_factor_2)) / (1 - (1 / init_exp_factor_2)) * identity.repeat(ts.shape[0], 1, 1) + (
+            1 - 1 / exp_factor_1
+        ) * (1 - (1 / exp_factor_2)) * sigmoid_layers_output
+        return output

@@ -28,25 +28,35 @@ def stochastic_trajectories(
     log_path_weight_deterministic = torch.zeros(x0.shape[0]).to(x0.device)
     log_path_weight_stochastic = torch.zeros(x0.shape[0]).to(x0.device)
     log_terminal_weight = torch.zeros(x0.shape[0]).to(x0.device)
+    stopping_condition = sde.stopping_condition or None
+    stop_inds = torch.ones(x0.shape[0]).to(x0.device) # ones if not stopped, zero if stopped
+    print(f'stop_inds: {stop_inds}')
+    stop_indicators = torch.ones(x0.shape[0]).to(x0.device)
     for t0, t1 in zip(t[:-1], t[1:]):
         dt = t1 - t0
         noise = torch.randn_like(x0).to(x0.device)
         noises.append(noise)
         u0 = sde.control(t0, x0, verbose=verbose)
         x0 = (
-            x0
+            x0 + stop_inds * (
             + (sde.b(t0, x0) + torch.einsum("ij,bj->bi", sde.sigma, u0)) * dt
             + torch.sqrt(lmbd * dt) * torch.einsum("ij,bj->bi", sde.sigma, noise)
+            )
         )
         xt.append(x0)
         controls.append(u0)
 
-        log_path_weight_deterministic = log_path_weight_deterministic + dt / lmbd * (
+        log_path_weight_deterministic = log_path_weight_deterministic + stop_inds * ( dt / lmbd * (
             -sde.f(t0, x0) - 0.5 * torch.sum(u0**2, dim=1)
         )
-        log_path_weight_stochastic = log_path_weight_stochastic + torch.sqrt(
+        )
+        log_path_weight_stochastic = log_path_weight_stochastic + stop_inds * ( torch.sqrt(
             dt / lmbd
         ) * (-torch.sum(u0 * noise, dim=1))
+        )
+        if stopping_condition:
+            stop_inds = stopping_condition(x0)
+            stop_indicators.append(stop_inds)
 
     log_terminal_weight = -sde.g(x0) / lmbd
 
@@ -54,6 +64,7 @@ def stochastic_trajectories(
         return (
             torch.stack(xt).detach(),
             torch.stack(noises).detach(),
+            torch.stack(stop_indicators).detach(),
             log_path_weight_deterministic.detach(),
             log_path_weight_stochastic.detach(),
             log_terminal_weight.detach(),
@@ -63,6 +74,7 @@ def stochastic_trajectories(
         return (
             torch.stack(xt),
             torch.stack(noises),
+            torch.stack(stop_indicators),
             log_path_weight_deterministic,
             log_path_weight_stochastic,
             log_terminal_weight,
@@ -77,6 +89,7 @@ def control_objective(
     for k in range(n_batches):
         state0 = x0.repeat(batch_size, 1)
         (
+            _,
             _,
             _,
             log_path_weight_deterministic,
@@ -111,6 +124,7 @@ def normalization_constant(sde, x0, ts, sigma, cfg, n_batches_normalization = 51
     for k in range(n_batches_normalization):
         (
             states,
+            _,
             _,
             log_path_weight_deterministic,
             log_path_weight_stochastic,

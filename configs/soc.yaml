@@ -25,6 +25,7 @@ method:
   n_samples_control: 65536
   use_warm_start: False
   num_splines: 1
+  use_stopping_time: False
 
 arch:
   hdims: [256, 128, 64] 
