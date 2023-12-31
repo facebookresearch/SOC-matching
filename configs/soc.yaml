@@ -8,6 +8,7 @@ method:
   num_steps: 50
   lmbd: 1.0
   gamma: 0.2
+  gamma2: 0.2
   task_id: None
   d: 20
   use_gpu: True

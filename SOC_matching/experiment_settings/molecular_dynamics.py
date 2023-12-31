@@ -7,10 +7,10 @@ import torch
 import torch.nn.functional as F
 from matplotlib.patches import Rectangle
 
-from vr_sdes import method
+from SOC_matching import method
 
 
-class Multiagent8(method.NeuralSDE):
+class MolecularDynamics(method.NeuralSDE):
     def __init__(
         self,
         device="cuda",
@@ -19,9 +19,7 @@ class Multiagent8(method.NeuralSDE):
         hdims_M=[128, 128],
         u=None,
         lmbd=1.0,
-        g_center=torch.zeros(2),
-        g_coeff=1.0,
-        f_coeff=1.0,
+        kappa=torch.ones(2),
         sigma=torch.eye(2),
         gamma=3.0,
         scaling_factor_nabla_V=1.0,
@@ -29,6 +27,7 @@ class Multiagent8(method.NeuralSDE):
         T=1.0,
         u_warm_start=None,
         use_warm_start=False,
+        use_stopping_time=False,
     ):
         super().__init__(
             device=device,
@@ -44,10 +43,9 @@ class Multiagent8(method.NeuralSDE):
             T=T,
             u_warm_start=u_warm_start,
             use_warm_start=use_warm_start,
+            use_stopping_time=use_stopping_time,
         )
-        self.g_center = g_center
-        self.g_coeff = g_coeff
-        self.f_coeff = f_coeff
+        self.kappa = kappa
 
     # Base Drift
     def b(self, t, x):
@@ -75,13 +73,14 @@ class Multiagent8(method.NeuralSDE):
         x: (B, D)
         output: (B,)
         """
-        return torch.zeros_like(x)
+        return torch.zeros_like(x[...,0])
 
     def nabla_g(self, x):
-        with torch.enable_grad():
-            x = x.requires_grad_(True)
-            output = torch.autograd.grad(self.g(x).sum(), x)[0]
-            return output
+        # with torch.enable_grad():
+        #     x = x.requires_grad_(True)
+        #     output = torch.autograd.grad(self.g(x).sum(), x)[0]
+        #     return output
+        return torch.zeros_like(x)
 
     # Running cost
     def f(self, t, x):
@@ -89,21 +88,22 @@ class Multiagent8(method.NeuralSDE):
         x: (T, B, D) or (B, D)
         output: (T, B) or (B)
         """
-        return torch.ones_like(x)
+        return torch.ones_like(x[...,0])
 
     def nabla_f(self, t, x):
-        with torch.enable_grad():
-            x = x.requires_grad_(True)
-            output = torch.autograd.grad(self.f(t, x).sum(), x)[0]
-            return output
+        # with torch.enable_grad():
+        #     x = x.requires_grad_(True)
+        #     output = torch.autograd.grad(self.f(t, x).sum(), x)[0]
+        #     return output
+        return torch.zeros_like(x)
 
-    def stopping_condition(x): # 0 if x is stopped, 1 if x is not stopped
+    def stopping_condition(self, x): # 0 if x is stopped, 1 if x is not stopped
         if len(x.shape) == 2:
             return (x[:,0] < 0).to(torch.int)
         elif len(x.shape) == 3:
             return (x[:,:,0] < 0).to(torch.int)
         
-    def Phi(x):
+    def Phi(self, x):
         if len(x.shape) == 2:
             return - x[:,0]
         elif len(x.shape) == 3:

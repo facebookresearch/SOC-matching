@@ -276,12 +276,12 @@ class SigmoidMLP(torch.nn.Module):
         return output
     
 class TwoBoundarySigmoidMLP(torch.nn.Module):
-    def __init__(self, dim=10, hdims=[128, 128], gamma1=3.0, gamma2=3.0, #stopping_function=None, 
+    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, gamma2=3.0, #stopping_function=None, 
                  scaling_factor=1.0):
         super().__init__()
 
         self.dim = dim
-        self.gamma1 = gamma1
+        self.gamma = gamma
         self.gamma2 = gamma2
         #self.stopping_function = stopping_function
         self.sigmoid_layers = nn.Sequential(
@@ -301,18 +301,52 @@ class TwoBoundarySigmoidMLP(torch.nn.Module):
     def forward(self, t, s, stopping_function_output, init_stopping_function_output):
         ts = torch.cat((t.unsqueeze(1), s.unsqueeze(1)), dim=1)
         sigmoid_layers_output = self.sigmoid_layers(ts).reshape(-1, 1, self.dim, self.dim)
+        # print(f'torch.mean(sigmoid_layers_output): {torch.mean(sigmoid_layers_output)}')
         exp_factor_1 = (
-            torch.exp(self.gamma1 * (s - t)).unsqueeze(1).unsqueeze(2).unsqueeze(3)
+            torch.exp(self.gamma * (s - t)).unsqueeze(1).unsqueeze(2).unsqueeze(3)
         )
-        identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)
+        # init_stopped = (init_stopping_function_output > 0).to(torch.int).unsqueeze(1).unsqueeze(2).unsqueeze(3)
+        identity = torch.eye(self.dim).unsqueeze(0).unsqueeze(0).to(ts.device)
         # stopping_function_output = self.stopping_function(x) ## Finish
         exp_factor_2 = (
-            torch.exp(self.gamma2 * stopping_function_output).unsqueeze(1).unsqueeze(2)
+            torch.exp(self.gamma2 * stopping_function_output).unsqueeze(2).unsqueeze(3)
         )
         init_exp_factor_2 = (
-            torch.exp(self.gamma2 * init_stopping_function_output).unsqueeze(1).unsqueeze(2)
+            torch.exp(self.gamma2 * init_stopping_function_output).unsqueeze(2).unsqueeze(3)
         )
-        output = (1 / exp_factor_1) * (1 - (1 / exp_factor_2)) / (1 - (1 / init_exp_factor_2)) * identity.repeat(ts.shape[0], 1, 1) + (
-            1 - 1 / exp_factor_1
-        ) * (1 - (1 / exp_factor_2)) * sigmoid_layers_output
+        # print(f'torch.min(stopping_function_output): {torch.min(stopping_function_output)}, torch.max(stopping_function_output): {torch.max(stopping_function_output)}')
+        # print(f'sigmoid_layers_output.shape: {sigmoid_layers_output.shape}')
+        # print(f'stopping_function_output.shape: {stopping_function_output.shape}, init_stopping_function_output.shape: {init_stopping_function_output.shape}')
+        # print(f'exp_factor_1.shape: {exp_factor_1.shape}, exp_factor_2.shape: {exp_factor_2.shape}, init_exp_factor_2.shape: {init_exp_factor_2.shape}')
+        # output = (1 / exp_factor_1) * (1 - (1 / exp_factor_2)) / (1 - (1 / init_exp_factor_2)) * identity.repeat(ts.shape[0], 1, 1) + (
+        #     1 - 1 / exp_factor_1
+        # ) * (1 - (1 / exp_factor_2)) * sigmoid_layers_output
+        # print(f'torch.mean(1 - (1 / exp_factor_1)): {torch.mean(1 - (1 / exp_factor_1))}')
+        # print(f'torch.mean(1 - (1 / exp_factor_2)): {torch.mean(1 - (1 / exp_factor_2))}')
+        # print(f'torch.mean(1 - (1 / init_exp_factor_2)): {torch.mean(1 - (1 / init_exp_factor_2) + 1e-4)}')
+        # print(f'(1 - (1 / init_exp_factor_2)): {(1 - (1 / init_exp_factor_2) + 1e-4)}')
+        # print(f'torch.mean((1 - (1 / exp_factor_2)) / (1 - (1 / init_exp_factor_2))): {torch.mean((1 - (1 / exp_factor_2) + 1e-4) / (1 - (1 / init_exp_factor_2) + 1e-4))}')
+        # print(f'(1 - (1 / exp_factor_2)) / (1 - (1 / init_exp_factor_2)): {(1 - (1 / exp_factor_2) + 1e-4) / (1 - (1 / init_exp_factor_2) + 1e-4)}')
+        output1 = (1 / exp_factor_1) * (1 - (1 / exp_factor_2) + 3e-4) / (1 - (1 / init_exp_factor_2) + 3e-4) * identity.repeat(ts.shape[0], exp_factor_2.shape[1], 1, 1)
+        # print(f'torch.min((1 - (1 / init_exp_factor_2) + 1e-3)): {torch.min((1 - (1 / init_exp_factor_2) + 1e-3))}')
+        # print(f'torch.min(output1): {torch.min(output1)}')
+        # print(f'torch.mean(output1**2): {torch.mean(output1**2)}')
+        # print(f'torch.mean(output1): {torch.mean(output1)}')
+        # print(f'output1.shape: {output1.shape}')
+        output2 = (1 - 1 / exp_factor_1) * (1 - (1 / exp_factor_2)) * sigmoid_layers_output
+        # print(f'torch.mean(output2**2): {torch.mean(output2**2)}')
+        # print(f'torch.mean(output2): {torch.mean(output2)}')
+        # print(f'output2.shape: {output2.shape}')
+        output = output1 + output2
         return output
+
+        # ts = torch.cat((t.unsqueeze(1), s.unsqueeze(1)), dim=1)
+        # sigmoid_layers_output = self.sigmoid_layers(ts).reshape(-1, self.dim, self.dim)
+        # exp_factor = (
+        #     torch.exp(self.gamma * (ts[:, 1] - ts[:, 0])).unsqueeze(1).unsqueeze(2)
+        # )
+        # identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)
+        # output = (1 / exp_factor) * identity.repeat(ts.shape[0], 1, 1) + (
+        #     1 - 1 / exp_factor
+        # ) * sigmoid_layers_output
+        # return output.unsqueeze(1)

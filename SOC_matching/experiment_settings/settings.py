@@ -19,6 +19,7 @@ from SOC_matching.models import (
 from SOC_matching.experiment_settings.OU_quadratic import OU_Quadratic
 from SOC_matching.experiment_settings.OU_linear import OU_Linear
 from SOC_matching.experiment_settings.double_well import DoubleWell
+from SOC_matching.experiment_settings.molecular_dynamics import MolecularDynamics
 
 
 def ground_truth_control(cfg, ts, x0, **kwargs):
@@ -105,6 +106,10 @@ def ground_truth_control(cfg, ts, x0, **kwargs):
         optimal_sde = None
         return optimal_sde
 
+    elif cfg.method.setting == "molecular_dynamics":
+        optimal_sde = None
+        return optimal_sde
+
 def set_warm_start(cfg, sde, x0, sigma):
     if cfg.method.use_warm_start:
         # Use Gaussian path
@@ -171,6 +176,20 @@ def define_neural_sde(cfg, ts, x0, u_warm_start, **kwargs):
             gamma=cfg.method.gamma,
             scaling_factor_nabla_V=cfg.method.scaling_factor_nabla_V,
             scaling_factor_M=cfg.method.scaling_factor_M,
+        )
+    elif cfg.method.setting == "molecular_dynamics":
+        neural_sde = MolecularDynamics(
+            device=cfg.method.device,
+            dim=cfg.method.d,
+            hdims=cfg.arch.hdims,
+            hdims_M=cfg.arch.hdims_M,
+            lmbd=cfg.method.lmbd,
+            kappa=kwargs["kappa"],
+            sigma=kwargs["sigma"],
+            gamma=cfg.method.gamma,
+            scaling_factor_nabla_V=cfg.method.scaling_factor_nabla_V,
+            scaling_factor_M=cfg.method.scaling_factor_M,
+            use_stopping_time=cfg.method.use_stopping_time,
         )
     neural_sde.initialize_models()
     return neural_sde
@@ -241,6 +260,28 @@ def define_variables(cfg, ts):
         u_warm_start = set_warm_start(cfg, optimal_sde, x0, sigma)
         neural_sde = define_neural_sde(
             cfg, ts, x0, u_warm_start, sigma=sigma, kappa=kappa, nu=nu
+        )
+
+        return x0, sigma, optimal_sde, neural_sde, u_warm_start
+    
+    elif cfg.method.setting == "molecular_dynamics":
+        print(f"molecular_dynamics")
+        x0 = -0.5 * torch.ones(cfg.method.d).to(cfg.method.device)
+
+        # kappa_i = 5
+        kappa = torch.ones(cfg.method.d).to(cfg.method.device)
+        # kappa[0] = kappa_i
+        # kappa[1] = kappa_i
+        # kappa[2] = kappa_i
+
+        sigma = torch.eye(cfg.method.d).to(cfg.method.device)
+
+        optimal_sde = ground_truth_control(
+            cfg, ts, x0, sigma=sigma, kappa=kappa, 
+        )
+        u_warm_start = set_warm_start(cfg, optimal_sde, x0, sigma)
+        neural_sde = define_neural_sde(
+            cfg, ts, x0, u_warm_start, sigma=sigma, kappa=kappa,
         )
 
         return x0, sigma, optimal_sde, neural_sde, u_warm_start

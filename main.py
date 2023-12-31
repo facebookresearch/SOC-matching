@@ -271,6 +271,7 @@ def main(cfg: DictConfig):
                     trajectory,
                     weight_mean,
                     weight_std,
+                    stop_indicators,
                 ) = soc_solver.loss(
                     cfg.optim.batch_size,
                     compute_L2_error=compute_L2_error,
@@ -399,6 +400,8 @@ def main(cfg: DictConfig):
                             print(
                                 f"soc_solver.neural_sde.M.gamma: {soc_solver.neural_sde.M.gamma.item()}"
                             )
+                        if cfg.method.use_stopping_time:
+                            print(f'torch.mean(stop_indicators): {torch.mean(stop_indicators)}')
 
                         end = time.time()
 
