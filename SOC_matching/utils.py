@@ -46,22 +46,33 @@ def stochastic_trajectories(
             (sde.b(t0, x0) + torch.einsum("ij,bj->bi", sde.sigma, u0)) * dt
             + torch.sqrt(lmbd * dt) * torch.einsum("ij,bj->bi", sde.sigma, noise)
         )
+        # print(f'drift term: {torch.mean((sde.b(t0, x0) + torch.einsum("ij,bj->bi", sde.sigma, u0))**2 * dt**2)}')
+        # print(f'noise term: {torch.mean(torch.sqrt(lmbd * dt)**2 * torch.einsum("ij,bj->bi", sde.sigma, noise)**2)}')
+        # drift_term = torch.mean((sde.b(t0, x0) + torch.einsum("ij,bj->bi", sde.sigma, u0))**2 * dt**2)
+        # noise_term = torch.mean(torch.sqrt(lmbd * dt)**2 * torch.einsum("ij,bj->bi", sde.sigma, noise)**2)
+        # print(f'torch.sum((25 * drift_term > noise_term).to(torch.int))/torch.sum((noise_term > 0).to(torch.int)): {torch.sum((50 * drift_term > noise_term).to(torch.int))/torch.sum((noise_term > 0).to(torch.int))}')
+        # import ipdb
+        # ipdb.set_trace()
         x0 = (
             x0 + stop_inds.unsqueeze(1) * update
         )
         # print(f'x0.shape: {x0.shape}')
         if stopping_condition:
             Phi_values_after_update = sde.Phi(x0)
-            stopping_condition_holds = torch.logical_and(Phi_values_before_update > 0, Phi_values_after_update < 0).to(torch.float)
+            not_stopped = torch.logical_and(Phi_values_before_update > 0, Phi_values_after_update > 0).to(torch.float)
+            just_stopped = torch.logical_and(Phi_values_before_update > 0, Phi_values_after_update < 0).to(torch.float)
+            # already_stopped = (Phi_values_before_update > 0).to(torch.float)
             # step_fraction = stopping_condition_holds * (Phi_values_before_update / (Phi_values_before_update - Phi_values_after_update + 1e-3) + 1e-3)
-            step_fraction = stopping_condition_holds * ((Phi_values_before_update) / (Phi_values_before_update - Phi_values_after_update + 1e-4) + 1e-3)
+            step_fraction = just_stopped * ((Phi_values_before_update) / (Phi_values_before_update - Phi_values_after_update + 1e-6) + 1e-6)
             # step_fractions.append(step_fraction)
             # print(f'stopping_condition_holds.shape: {stopping_condition_holds.shape}')
             # print(f'torch.mean(stopping_condition_holds): {torch.mean(stopping_condition_holds)}')
             # print(f'torch.max(x0) before: {torch.max(x0)}')
             # print(f'step_fraction: {step_fraction}')
-            x0 = stopping_condition_holds.unsqueeze(1) * (x0_before + step_fraction.unsqueeze(1) * stop_inds.unsqueeze(1) * update) + (1 - stopping_condition_holds.unsqueeze(1)) * x0 
-            fractional_timestep = stopping_condition_holds * step_fraction ** 2 * dt + (1 - stopping_condition_holds) * dt 
+            x0 = (just_stopped.unsqueeze(1) * (x0_before + step_fraction.unsqueeze(1) * stop_inds.unsqueeze(1) * update) 
+                  + (1 - just_stopped.unsqueeze(1)) * x0) 
+            fractional_timestep = (just_stopped * step_fraction ** 2 * dt 
+                                   + not_stopped * dt) 
             fractional_timesteps.append(fractional_timestep)
             # print(f'torch.max(x0) after: {torch.max(x0)}')
             # print(f'x0.shape after: {x0.shape}')
@@ -71,7 +82,8 @@ def stochastic_trajectories(
             # print(f'step_fraction: {step_fraction}')
             # print(f'(x0_before + step_fraction.unsqueeze(1) * stop_inds.unsqueeze(1) * update): {(x0_before + step_fraction.unsqueeze(1) * stop_inds.unsqueeze(1) * update)}')
             # print(f'x0: {x0}')
-            stop_inds = stopping_condition(x0)
+            # stop_inds = stopping_condition(x0)
+            stop_inds = (sde.Phi(x0) > 0)
             stop_indicators.append(stop_inds)
         else:
             fractional_timesteps.append(dt * torch.ones(x0.shape[0]).to(x0.device))
@@ -85,23 +97,27 @@ def stochastic_trajectories(
         # print(f'sde.f(t0, x0).shape: {sde.f(t0, x0).shape}')
         # print(f'torch.sum(u0**2, dim=1).shape: {torch.sum(u0**2, dim=1).shape}')
         if stopping_condition:
-            log_path_weight_deterministic = log_path_weight_deterministic + stop_inds * ( fractional_timestep / lmbd * (
+            # log_path_weight_deterministic = log_path_weight_deterministic + stop_inds * ( fractional_timestep / lmbd * (
+            #     -sde.f(t0, x0) - 0.5 * torch.sum(u0**2, dim=1)
+            # )
+            # )
+            # log_path_weight_stochastic = log_path_weight_stochastic + stop_inds * ( torch.sqrt(
+            #     fractional_timestep / lmbd
+            # ) * (-torch.sum(u0 * noise, dim=1))
+            # )
+            log_path_weight_deterministic = log_path_weight_deterministic + fractional_timestep / lmbd * (
                 -sde.f(t0, x0) - 0.5 * torch.sum(u0**2, dim=1)
             )
-            )
-            log_path_weight_stochastic = log_path_weight_stochastic + stop_inds * ( torch.sqrt(
+            log_path_weight_stochastic = log_path_weight_stochastic + torch.sqrt(
                 fractional_timestep / lmbd
             ) * (-torch.sum(u0 * noise, dim=1))
-            )
         else:
-            log_path_weight_deterministic = log_path_weight_deterministic + stop_inds * ( dt / lmbd * (
+            log_path_weight_deterministic = log_path_weight_deterministic + dt / lmbd * (
                 -sde.f(t0, x0) - 0.5 * torch.sum(u0**2, dim=1)
             )
-            )
-            log_path_weight_stochastic = log_path_weight_stochastic + stop_inds * ( torch.sqrt(
+            log_path_weight_stochastic = log_path_weight_stochastic + torch.sqrt(
                 dt / lmbd
             ) * (-torch.sum(u0 * noise, dim=1))
-            )
 
     log_terminal_weight = -sde.g(x0) / lmbd
     # print(f'torch.min(sde.Phi(x0)): {torch.min(sde.Phi(x0))}, torch.max(sde.Phi(x0)): {torch.max(sde.Phi(x0))}')
