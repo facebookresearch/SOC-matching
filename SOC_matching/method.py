@@ -27,6 +27,7 @@ class NeuralSDE(torch.nn.Module):
         sigma=torch.eye(2),
         gamma=1.0,
         gamma2=1.0,
+        gamma3=1.0,
         scaling_factor_nabla_V=1.0,
         scaling_factor_M=1.0,
         T=1.0,
@@ -44,6 +45,7 @@ class NeuralSDE(torch.nn.Module):
         self.sigma = sigma
         self.gamma = gamma
         self.gamma2 = gamma2
+        self.gamma3 = gamma3
         self.scaling_factor_nabla_V = scaling_factor_nabla_V
         self.scaling_factor_M = scaling_factor_M
         self.use_learned_control = False
@@ -115,11 +117,13 @@ class NeuralSDE(torch.nn.Module):
         if self.use_stopping_time:
             self.gamma = torch.nn.Parameter(torch.tensor([self.gamma]).to(self.device))
             self.gamma2 = torch.nn.Parameter(torch.tensor([self.gamma2]).to(self.device))
+            self.gamma3 = torch.nn.Parameter(torch.tensor([self.gamma3]).to(self.device))
             self.M = models.TwoBoundarySigmoidMLP(
                 dim=self.dim,
                 hdims=self.hdims_M,
                 gamma=self.gamma,
                 gamma2=self.gamma2,
+                gamma3=self.gamma3,
                 scaling_factor=self.scaling_factor_M,
             ).to(self.device)
             # self.gamma = torch.nn.Parameter(torch.tensor([self.gamma]).to(self.device))
@@ -508,6 +512,11 @@ class SOC_Solver(nn.Module):
                 stopping_function_output = self.neural_sde.Phi(states)
                 stopping_function_output_int = (self.neural_sde.Phi(states) > 0).to(torch.int)
                 stopping_timestep = (torch.sum(stopping_function_output_int, dim=0) - 1) / (len(self.ts) - 1)
+                # print(f'stopping_timestep: {stopping_timestep}')
+                # print(f'fractional_timesteps: {fractional_timesteps}')
+                # cumulative_fractional_timesteps = torch.cumsum(fractional_timesteps, dim=0)
+                # stopping_timestep = torch.sum(fractional_timesteps, dim=0)
+                # print(f'stopping_timestep: {stopping_timestep}')
                 # print(f'torch.min(stopping_function_output_int): {torch.min(stopping_function_output_int)}')
                 # print(f'torch.max(stopping_function_output_int): {torch.max(stopping_function_output_int)}')
                 # stopping_function_output_intcumsum = torch.cumsum(stopping_function_output, dim=0)
@@ -795,10 +804,10 @@ class SOC_Solver(nn.Module):
             deterministic_integrand = (integrand_term_1 + integrand_term_2)
             stochastic_integrand = -np.sqrt(1 / self.lmbd) * torch.sum(
                 learned_controls[:-1, :, :] * noises, dim=2
-            ) * stop_indicators[:-1,:]
-            if use_stopping_time:
-                deterministic_integrand = deterministic_integrand * stop_indicators[:-1,:]
-                stochastic_integrand = stochastic_integrand * stop_indicators[:-1,:]
+            ) #* stop_indicators[:-1,:]
+            # if use_stopping_time:
+            #     deterministic_integrand = deterministic_integrand * stop_indicators[:-1,:]
+            #     stochastic_integrand = stochastic_integrand * stop_indicators[:-1,:]
 
             if use_stopping_time:
                 # print(f'fractional_timesteps.shape: {fractional_timesteps.shape}')

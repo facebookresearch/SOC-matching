@@ -56,9 +56,11 @@ To get the plots:
 
 ## Molecular dynamics
 To run the algorithms:
-`python main.py method.algorithm='SOCM' method.lmbd=1.0 method.setting='molecular_dynamics' method.d=1 method.gamma=2.0 method.gamma2=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.num_iterations=60000 method.use_stopping_time=True optim.batch_size=64 arch.hdims_M=[64,64] -m`
-`python main.py method.algorithm='SOCM','rel_entropy','cross_entropy','log-variance','moment','variance' method.lmbd=1.0 method.setting='molecular_dynamics' method.d=1 method.gamma=2.0 method.gamma2=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 method.num_iterations=60000 method.use_stopping_time=True method.num_steps=50 optim.batch_size=64 arch.hdims_M=[64,64] -m`
-
+<!-- `python main.py method.algorithm='SOCM' method.lmbd=1.0 method.setting='molecular_dynamics' method.d=1 method.gamma=2.0 method.gamma2=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.num_iterations=60000 method.use_stopping_time=True optim.batch_size=64 arch.hdims_M=[64,64] -m`
+`python main.py method.algorithm='SOCM','rel_entropy','cross_entropy','log-variance','moment','variance' method.lmbd=1.0 method.setting='molecular_dynamics' method.d=1 method.gamma=2.0 method.gamma2=2.0 method.gamma3=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 method.num_iterations=60000 method.use_stopping_time=True method.num_steps=50 optim.batch_size=64 arch.hdims_M=[64,64] -m`
+`python main.py method.algorithm='SOCM','rel_entropy','cross_entropy','log-variance','moment','variance' method.lmbd=1.0 method.setting='molecular_dynamics' method.d=1 method.gamma=2.0 method.gamma2=2.0 method.gamma3=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 method.num_iterations=30000 method.use_stopping_time=True method.num_steps=300 optim.batch_size=64 arch.hdims_M=[64,64] -m` -->
+`python main.py method.algorithm='SOCM','rel_entropy','cross_entropy','log-variance','moment','variance' method.lmbd=1.0 method.setting='molecular_dynamics' method.d=1 method.gamma=2.0 method.gamma2=2.0 method.gamma3=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 method.num_iterations=30000 method.use_stopping_time=True method.num_steps=150 optim.batch_size=64 arch.hdims_M=[64,64] -m`
+`python plots.py method.lmbd=1.0 method.gamma=6.0 method.gamma2=2.0 method.gamma3=2.0 method.setting='molecular_dynamics' method.d=1 method.num_steps=150 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=64 method.num_iterations=30000 method.use_stopping_time=True method.seed=0`
 
 ## Citations
 If you find this repository helpful for your publications,

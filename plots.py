@@ -39,7 +39,12 @@ def compute_SNR(training_info):
     SNR = sqd_norm_EMA_grad / (variance + 1e-7)
     training_info['EMA_SNR'] = SNR
 
-def plot_loss(soc_solver_list, variable='norm_sqd_diff', save_figure=False, file_name=None, plots_folder_name=None, set_ylims=False, ylim_inf=None, ylim_sup=None, title=None, use_fixed_colors=False):
+def compute_normalized_importance_weight_std_dev(training_info):
+    EMA_weight_std = torch.stack(training_info['EMA_weight_std']).cpu().numpy() 
+    EMA_weight_mean = torch.stack(training_info['EMA_weight_mean']).cpu().numpy()
+    training_info['normalized_IW_std_dev'] = EMA_weight_std / EMA_weight_mean
+
+def plot_loss(soc_solver_list, cfg, variable='norm_sqd_diff', save_figure=False, file_name=None, plots_folder_name=None, set_ylims=False, ylim_inf=None, ylim_sup=None, title=None, use_fixed_colors=False):
     #linestyles and colors
     lss = ['-', '-.',  ':', '--',  '--', '-.', ':', '-', '--', '-.', ':', '-']*5
     cmap = mpl.cm.get_cmap('Set1') 
@@ -69,6 +74,8 @@ def plot_loss(soc_solver_list, variable='norm_sqd_diff', save_figure=False, file
         ylabel = 'Control objective'
         iterations_array = None
         first_point_control_loss = 1
+    elif variable == 'normalized_IW_std_dev':
+        ylabel = 'Importance weight std. dev. (normalized)'
 
     num_plots = len(soc_solver_list)
     cmap_values = np.linspace(0,1,num=num_plots)
@@ -81,7 +88,7 @@ def plot_loss(soc_solver_list, variable='norm_sqd_diff', save_figure=False, file
             color = cmap(cmap_values[k])
 
         print(f'variable: {variable}, algorithm: {algorithm}, plots_folder_name: {plots_folder_name}')
-        if variable == 'control_objective_mean' and algorithm == 'variance':
+        if variable == 'control_objective_mean' and algorithm == 'variance' and cfg.method.setting != 'molecular_dynamics':
             continue
         if variable == 'control_objective_mean':
             variable_array = torch.stack(training_info[variable]).cpu().numpy()[first_point_control_loss:]
@@ -92,6 +99,9 @@ def plot_loss(soc_solver_list, variable='norm_sqd_diff', save_figure=False, file
             variable_array = training_info[variable][first_point_SNR:]
             iterations_array = first_point_SNR + np.linspace(0, len(variable_array), num=len(variable_array), endpoint=False, dtype=int)
             print(f'iterations_array: {iterations_array}')
+        elif variable == 'normalized_IW_std_dev':
+            variable_array = training_info[variable]
+            iterations_array = np.linspace(0, len(variable_array), num=len(variable_array), endpoint=False, dtype=int)
         else:
             variable_array = torch.stack(training_info[variable]).detach().cpu().numpy()
             iterations_array = np.linspace(0, len(variable_array), num=len(variable_array), endpoint=False, dtype=int)
@@ -135,12 +145,19 @@ def main(cfg: DictConfig):
 
     folder_names, plots_folder_name = get_folder_names_plots(cfg)
     file_names = get_file_names_plots(folder_names, last=True)
+    print(f'file_names: {file_names}')
 
-    legend_names = ['SOCM (ours)',
-                    'SOCM '+r'$M_t=I$'+' (ours)',
-                    'Adjoint', 
-                    'Cross Entropy', 'Log-Variance', 
-                    'Moment', 'Variance']
+    if cfg.method.setting == 'molecular_dynamics':
+        legend_names = ['SOCM (ours)',
+                        'Adjoint', 
+                        'Cross Entropy', 'Log-Variance', 
+                        'Moment', 'Variance']
+    else:
+        legend_names = ['SOCM (ours)',
+                        'SOCM '+r'$M_t=I$'+' (ours)',
+                        'Adjoint', 
+                        'Cross Entropy', 'Log-Variance', 
+                        'Moment', 'Variance']
     
     file_name = 'last'
     set_ylims = False
@@ -150,6 +167,7 @@ def main(cfg: DictConfig):
     ylim_inf_grad = None
     ylim_sup_grad = None
     plot_norm_sqd_diff = True
+    plot_normalized_weight_variance = False
     title = None
     use_fixed_colors = True
 
@@ -169,6 +187,7 @@ def main(cfg: DictConfig):
                 soc_solver = pickle.load(f)
                 soc_solver.legend_name = legend_names[k]
                 compute_SNR(soc_solver.training_info)
+                compute_normalized_importance_weight_std_dev(soc_solver.training_info)
                 soc_solver_list.append(soc_solver)
 
     last_algorithm = {}
@@ -197,6 +216,12 @@ def main(cfg: DictConfig):
         last_algorithm['EMA_grad_norm_sqd'] = 7
         last_algorithm['control_objective_mean'] = 6
         title = r'Double Well ($d=10$)'
+    elif cfg.method.setting == 'molecular_dynamics':
+        last_algorithm['EMA_grad_norm_sqd'] = 7
+        last_algorithm['control_objective_mean'] = 7
+        plot_norm_sqd_diff = False
+        plot_normalized_weight_variance = True
+        title = r'Molecular dynamics ($d=1$)'
 
     if cfg.method.setting == 'OU_quadratic_hard' and not cfg.method.use_warm_start:
         set_ylims = True
@@ -210,15 +235,18 @@ def main(cfg: DictConfig):
         os.makedirs(plots_folder_name, exist_ok=True)
 
         if plot_norm_sqd_diff:
-            plot_loss(soc_solver_list[:last_algorithm['EMA_norm_sqd_diff']], variable='EMA_norm_sqd_diff',
+            plot_loss(soc_solver_list[:last_algorithm['EMA_norm_sqd_diff']], cfg, variable='EMA_norm_sqd_diff',
                     save_figure=True, plots_folder_name=plots_folder_name, file_name=file_name, set_ylims=set_ylims, ylim_inf=ylim_inf, ylim_sup=ylim_sup, title=title, use_fixed_colors=use_fixed_colors)
-        plot_loss(soc_solver_list[:last_algorithm['EMA_grad_norm_sqd']], variable='EMA_grad_norm_sqd',
+        plot_loss(soc_solver_list[:last_algorithm['EMA_grad_norm_sqd']], cfg, variable='EMA_grad_norm_sqd',
                   save_figure=True, plots_folder_name=plots_folder_name, file_name=file_name, set_ylims=set_ylims_grad, ylim_inf=ylim_inf_grad, ylim_sup=ylim_sup_grad, title=title, use_fixed_colors=use_fixed_colors)
-        plot_loss(soc_solver_list, variable='EMA_loss',
+        plot_loss(soc_solver_list, cfg, variable='EMA_loss',
                   save_figure=True, plots_folder_name=plots_folder_name, file_name=file_name, title=title, use_fixed_colors=use_fixed_colors)
-        plot_loss(soc_solver_list[:last_algorithm['control_objective_mean']], variable='control_objective_mean',
+        plot_loss(soc_solver_list[:last_algorithm['control_objective_mean']], cfg, variable='control_objective_mean',
                   save_figure=True, plots_folder_name=plots_folder_name, file_name=file_name, title=title, use_fixed_colors=use_fixed_colors)
-        plot_loss(soc_solver_list, variable='EMA_SNR',
+        plot_loss(soc_solver_list, cfg, variable='EMA_SNR',
+                  save_figure=True, plots_folder_name=plots_folder_name, file_name=file_name, title=title, use_fixed_colors=use_fixed_colors)
+        if plot_normalized_weight_variance:
+            plot_loss(soc_solver_list, cfg, variable='normalized_IW_std_dev',
                   save_figure=True, plots_folder_name=plots_folder_name, file_name=file_name, title=title, use_fixed_colors=use_fixed_colors)
 
     else:

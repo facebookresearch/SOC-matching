@@ -276,16 +276,18 @@ class SigmoidMLP(torch.nn.Module):
         return output
     
 class TwoBoundarySigmoidMLP(torch.nn.Module):
-    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, gamma2=3.0, #stopping_function=None, 
+    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, gamma2=3.0, gamma3=3.0, #stopping_function=None, 
                  scaling_factor=1.0):
         super().__init__()
 
         self.dim = dim
         self.gamma = gamma
         self.gamma2 = gamma2
+        self.gamma3 = gamma3
         #self.stopping_function = stopping_function
         self.sigmoid_layers = nn.Sequential(
-            nn.Linear(2, hdims[0]),
+            # nn.Linear(2, hdims[0]),
+            nn.Linear(3, hdims[0]),
             nn.ReLU(),
             nn.Linear(hdims[0], hdims[1]),
             nn.ReLU(),
@@ -299,14 +301,19 @@ class TwoBoundarySigmoidMLP(torch.nn.Module):
                 m.bias.data *= self.scaling_factor
 
     def forward(self, t, s, stopping_function_output, stopping_function_output_int_cumsum, init_stopping_function_output, final_stopping_function_output, stopping_timestep_values):
-        ts = torch.cat((t.unsqueeze(1), s.unsqueeze(1)), dim=1)
-        sigmoid_layers_output = self.sigmoid_layers(ts).reshape(-1, 1, self.dim, self.dim)
+        # not_stopped = (stopping_timestep_values > 1 - 1e-3).to(torch.int)
+        # ts = torch.cat((t.unsqueeze(1), s.unsqueeze(1)), dim=1)
+        # sigmoid_layers_output = self.sigmoid_layers(ts).reshape(-1, 1, self.dim, self.dim)
+        ts_zero = torch.cat((t.unsqueeze(1), s.unsqueeze(1), torch.zeros_like(s).to(s.device).unsqueeze(1)), dim=1)
+        sigmoid_layers_output_stopped = self.sigmoid_layers(ts_zero).reshape(-1, 1, self.dim, self.dim)
+        ts_one = torch.cat((t.unsqueeze(1), s.unsqueeze(1), torch.ones_like(s).to(s.device).unsqueeze(1)), dim=1)
+        sigmoid_layers_output_not_stopped = self.sigmoid_layers(ts_one).reshape(-1, 1, self.dim, self.dim)
         # print(f'torch.mean(sigmoid_layers_output): {torch.mean(sigmoid_layers_output)}')
         exp_factor_1 = (
             torch.exp(self.gamma * (s - t)).unsqueeze(1).unsqueeze(2).unsqueeze(3)
         )
         # init_stopped = (init_stopping_function_output > 0).to(torch.int).unsqueeze(1).unsqueeze(2).unsqueeze(3)
-        identity = torch.eye(self.dim).unsqueeze(0).unsqueeze(0).to(ts.device)
+        identity = torch.eye(self.dim).unsqueeze(0).unsqueeze(0).to(t.device)
         # stopping_function_output = self.stopping_function(x) ## Finish
         exp_factor_2 = (
             torch.exp(self.gamma2 * stopping_function_output).unsqueeze(2).unsqueeze(3)
@@ -351,13 +358,19 @@ class TwoBoundarySigmoidMLP(torch.nn.Module):
         # print(f'not_stopped.shape: {not_stopped.shape}')
 
         # print(f's.shape: {s.shape}, t.shape: {t.shape}, stopping_timestep_values.shape: {stopping_timestep_values.shape}')
-        factor1 = torch.nan_to_num(1 - torch.minimum((s - t).unsqueeze(1) / (torch.abs(stopping_timestep_values - t.unsqueeze(1)) + 1e-7), torch.tensor([1]).to(ts.device)), nan=0.0)
+        # factor1 = torch.nan_to_num(1 - torch.minimum((s - t).unsqueeze(1) / (torch.abs(stopping_timestep_values - t.unsqueeze(1)) + 1e-7), torch.tensor([1]).to(ts.device)), nan=0.0)
+        factor1 = torch.nan_to_num(1 - torch.minimum((1-torch.exp(- self.gamma * (s - t))).unsqueeze(1) / (1 - torch.exp(- self.gamma * torch.abs(stopping_timestep_values - t.unsqueeze(1))) + 1e-7), torch.tensor([1]).to(t.device)), nan=0.0)
+        # factor1 = torch.nan_to_num(1 - torch.minimum((1-torch.exp(- self.gamma * (fractional_s - t.unsqueeze(1)))) / (1 - torch.exp(- self.gamma * torch.abs(stopping_timestep_values - t.unsqueeze(1))) + 1e-7), torch.tensor([1]).to(t.device)), nan=0.0)
         factor1_non_zero = (stopping_timestep_values - 1e-3 > s.unsqueeze(1)).to(torch.int)
+        # factor1_non_zero = (stopping_timestep_values - 1e-3 > fractional_s.unsqueeze(1)).to(torch.int)
         factor1 = factor1 * factor1_non_zero
         # print(f'torch.max(factor1): {torch.max(factor1)}, torch.min(factor1): {torch.min(factor1)}')
         # print(f'torch.min(factor1): {torch.min(factor1)}, torch.max(factor1): {torch.max(factor1)}')
         # output1 = stopping_function_output_int_cumsum.unsqueeze(2).unsqueeze(3) * identity.repeat(ts.shape[0], exp_factor_2.shape[1], 1, 1)
-        output1 = factor1.unsqueeze(2).unsqueeze(3) * identity.repeat(ts.shape[0], exp_factor_2.shape[1], 1, 1)
+        # output1 = factor1.unsqueeze(2).unsqueeze(3) * identity.repeat(t.shape[0], exp_factor_2.shape[1], 1, 1)
+        exp_gamma3_fun = lambda x: torch.exp(- self.gamma3 * x)
+        not_stopped = (stopping_timestep_values > 1 - 1e-3).to(torch.int)
+        output1 = ((1 - not_stopped) * factor1 + not_stopped * exp_gamma3_fun(s - t).unsqueeze(1)).unsqueeze(2).unsqueeze(3) * identity.repeat(t.shape[0], not_stopped.shape[1], 1, 1)
         # print(f'torch.mean(output1): {torch.mean(output1)}')
 
         # print(f'torch.min((1 - (1 / init_exp_factor_2) + 1e-3)): {torch.min((1 - (1 / init_exp_factor_2) + 1e-3))}')
@@ -367,17 +380,19 @@ class TwoBoundarySigmoidMLP(torch.nn.Module):
         # print(f'output1.shape: {output1.shape}')
         # output2 = (1 - 1 / exp_factor_1) * (1 - (1 / exp_factor_2)) * sigmoid_layers_output
         # factor_fun_1 = lambda x: 2 * torch.sqrt((x + 1e-6) * (1 - x + 1e-6))
-        factor_fun_1 = lambda x: 4 * x * (1 - x)
+        # factor_fun_1 = lambda x: 4 * x * (1 - x)
+        factor_fun_1 = lambda x: (1 - torch.exp(- self.gamma2 * x)) * (torch.exp(- self.gamma2 * x) - torch.exp(- self.gamma2))
         # s_not_stopped = (s.unsqueeze(1) < stopping_timestep_values).to(torch.int)
-        not_stopped = (stopping_timestep_values > 1 - 1e-3).to(torch.int)
         # factor_fun_2 = lambda x: torch.sqrt(x + 1e-6)
-        factor_fun_2 = lambda x: x
+        # exp_gamma3_fun = lambda x: (1 - torch.exp(- self.gamma2 * x))
 
         # factor_fun_1 = lambda x: 2 * torch.sqrt(x * (1 - x))
         # output2 = (1 - 1 / exp_factor_1) * ((1 / final_exp_factor_2) - (1 / exp_factor_2)) * sigmoid_layers_output
         # output2 = factor_fun_1(stopping_function_output_int_cumsum).unsqueeze(2).unsqueeze(3) * sigmoid_layers_output
-        output2 = factor_fun_1(factor1).unsqueeze(2).unsqueeze(3) * sigmoid_layers_output
+        # output2 = factor_fun_1(factor1).unsqueeze(2).unsqueeze(3) * sigmoid_layers_output
         # output2 = ((1 - not_stopped) * factor_fun_1(factor1) + not_stopped * factor_fun_2(factor1)).unsqueeze(2).unsqueeze(3) * sigmoid_layers_output
+        output2 = ((1 - not_stopped) * factor_fun_1(factor1)).unsqueeze(2).unsqueeze(3) * sigmoid_layers_output_stopped + (not_stopped * (1 - exp_gamma3_fun(s - t).unsqueeze(1))).unsqueeze(2).unsqueeze(3) * sigmoid_layers_output_not_stopped
+        # output2 = (factor_fun_1(factor1)).unsqueeze(2).unsqueeze(3) * sigmoid_layers_output_stopped
         # print(f'torch.min(factor_fun(stopping_function_output_int_cumsum)): {torch.min(factor_fun(stopping_function_output_int_cumsum))}')
         # print(f'torch.max(factor_fun(stopping_function_output_int_cumsum)): {torch.max(factor_fun(stopping_function_output_int_cumsum))}')
         

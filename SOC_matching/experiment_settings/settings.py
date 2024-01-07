@@ -266,7 +266,7 @@ def define_variables(cfg, ts):
     
     elif cfg.method.setting == "molecular_dynamics":
         print(f"molecular_dynamics")
-        x0 = -0.5 * torch.ones(cfg.method.d).to(cfg.method.device)
+        x0 = - torch.ones(cfg.method.d).to(cfg.method.device)
 
         # kappa_i = 5
         kappa = torch.ones(cfg.method.d).to(cfg.method.device)

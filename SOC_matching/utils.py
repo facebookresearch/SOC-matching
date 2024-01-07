@@ -279,11 +279,17 @@ def get_folder_name(cfg):
 
 def get_folder_names_plots(cfg):
     folder_names = []
-    algorithms = ['SOCM',
-                  'SOCM_const_M',
-                  'rel_entropy', 
-                  'cross_entropy', 'log-variance', 
-                  'moment', 'variance']
+    if cfg.method.setting == 'molecular_dynamics':
+        algorithms = ['SOCM',
+                      'rel_entropy', 
+                      'cross_entropy', 'log-variance', 
+                      'moment', 'variance']
+    else:
+        algorithms = ['SOCM',
+                      'SOCM_const_M',
+                      'rel_entropy', 
+                      'cross_entropy', 'log-variance', 
+                      'moment', 'variance']
     for k, algorithm in enumerate(algorithms):
         folder_name = ('../../outputs/multiruns/' + str(k) + '/' + algorithm + '_' + 
                        cfg.method.setting + '_' + 

@@ -65,7 +65,7 @@ def main(cfg: DictConfig):
     log.info(f"CWD: {os.getcwd()}")
 
     if cfg.method.use_gpu:
-        cfg.method.device = "cuda:0"
+        cfg.method.device = "cuda:" + str(cfg.method.device_number)
     else:
         cfg.method.device = "cpu"
     torch.manual_seed(cfg.method.seed)

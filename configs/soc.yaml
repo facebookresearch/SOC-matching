@@ -9,6 +9,7 @@ method:
   lmbd: 1.0
   gamma: 0.2
   gamma2: 0.2
+  gamma3: 0.2
   task_id: None
   d: 20
   use_gpu: True
@@ -16,6 +17,7 @@ method:
   setting: 'OU_quadratic_easy'
   seed: 0
   device: 'cuda'
+  device_number: 0
   num_iterations: 40000
   num_iterations_splines: 15000
   delta_t_optimal: 0.002
