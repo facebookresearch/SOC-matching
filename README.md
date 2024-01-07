@@ -54,6 +54,15 @@ To get the plots:
 
 `python plots.py method.lmbd=1.0 method.gamma=6.0 method.setting='double_well' method.d=10 method.num_steps=200 method.delta_t_optimal=0.001 method.delta_x_optimal=0.001 method.n_samples_control=65536 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.num_iterations=60000 method.seed=0`
 
+## Molecular dynamics
+To run the algorithms:
+
+`python main.py method.algorithm='SOCM','rel_entropy','cross_entropy','log-variance','moment','variance' method.lmbd=1.0 method.setting='molecular_dynamics' method.d=1 method.gamma=2.0 method.gamma2=2.0 method.gamma3=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 method.num_iterations=30000 method.use_stopping_time=True method.num_steps=150 optim.batch_size=64 arch.hdims_M=[64,64] -m`
+
+To get the plots:
+
+`python plots.py method.lmbd=1.0 method.gamma=6.0 method.gamma2=2.0 method.gamma3=2.0 method.setting='molecular_dynamics' method.d=1 method.num_steps=150 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=64 method.num_iterations=30000 method.use_stopping_time=True method.seed=0`
+
 ## Citations
 If you find this repository helpful for your publications,
 please consider citing our paper:

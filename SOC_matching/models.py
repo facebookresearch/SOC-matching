@@ -6,6 +6,7 @@
 import torch
 import torch.nn as nn
 
+
 class LinearControl:
     def __init__(self, u, T):
         self.u = u
@@ -148,6 +149,7 @@ class LowDimControl:
         else:
             return self.evaluate_ut_tensor(t, x)
 
+
 class RestrictedControl:
     def __init__(self, gpath, sigma, b, device, T, B):
         self.device = device
@@ -163,9 +165,7 @@ class RestrictedControl:
             print(f"x.shape in control: {x.shape}")
         len_2 = len(x.shape) == 2
         if len(x.shape) == 2:
-            x = x[None, :, None, :].repeat(
-                (self.B, 1, 1, 1)
-            )  
+            x = x[None, :, None, :].repeat((self.B, 1, 1, 1))
             t = torch.tensor([t]).to(self.device)
             t = t + 1e-4 if t < self.T / 2 else t - 1e-4
             control = self.gpath.ut(
@@ -198,10 +198,9 @@ class RestrictedControl:
             ).detach()
             return torch.transpose(output, 0, 1)
 
+
 class FullyConnectedUNet(torch.nn.Module):
-    def __init__(
-        self, dim=2, hdims=[256, 128, 64], scaling_factor=1.0
-    ):  
+    def __init__(self, dim=2, hdims=[256, 128, 64], scaling_factor=1.0):
         super().__init__()
 
         def initialize_weights(layer, scaling_factor):
@@ -273,4 +272,122 @@ class SigmoidMLP(torch.nn.Module):
         output = (1 / exp_factor) * identity.repeat(ts.shape[0], 1, 1) + (
             1 - 1 / exp_factor
         ) * sigmoid_layers_output
+        return output
+
+
+class TwoBoundarySigmoidMLP(torch.nn.Module):
+    def __init__(
+        self,
+        dim=10,
+        hdims=[128, 128],
+        gamma=3.0,
+        gamma2=3.0,
+        gamma3=3.0,
+        scaling_factor=1.0,
+        T=1.0,
+    ):
+        super().__init__()
+
+        self.dim = dim
+        self.gamma = gamma
+        self.gamma2 = gamma2
+        self.gamma3 = gamma3
+        self.T = T
+        self.sigmoid_layers = nn.Sequential(
+            nn.Linear(3, hdims[0]),
+            nn.ReLU(),
+            nn.Linear(hdims[0], hdims[1]),
+            nn.ReLU(),
+            nn.Linear(hdims[1], dim**2),
+        )
+        # the third input of sigmoid_layers specifies whether the process is stopped or not
+
+        self.scaling_factor = scaling_factor
+        for m in self.sigmoid_layers:
+            if isinstance(m, nn.Linear):
+                m.weight.data *= self.scaling_factor
+                m.bias.data *= self.scaling_factor
+
+    def forward(self, t, s, stopping_timestep_values):
+
+        ts_zero = torch.cat(
+            (
+                t.unsqueeze(1),
+                s.unsqueeze(1),
+                torch.zeros_like(s).to(s.device).unsqueeze(1),
+            ),
+            dim=1,
+        )
+        sigmoid_layers_output_stopped = self.sigmoid_layers(ts_zero).reshape(
+            -1, 1, self.dim, self.dim
+        )
+        # sigmoid_layers_output_stopped contains sigmoid_layers evaluations with third input 0
+
+        ts_one = torch.cat(
+            (
+                t.unsqueeze(1),
+                s.unsqueeze(1),
+                torch.ones_like(s).to(s.device).unsqueeze(1),
+            ),
+            dim=1,
+        )
+        sigmoid_layers_output_not_stopped = self.sigmoid_layers(ts_one).reshape(
+            -1, 1, self.dim, self.dim
+        )
+        # sigmoid_layers_output_stopped contains sigmoid_layers evaluations with third input 1
+
+        identity = torch.eye(self.dim).unsqueeze(0).unsqueeze(0).to(t.device)
+
+        factor1 = torch.nan_to_num(
+            1
+            - torch.minimum(
+                (1 - torch.exp(-self.gamma * (s - t))).unsqueeze(1)
+                / (
+                    1
+                    - torch.exp(
+                        -self.gamma
+                        * torch.abs(stopping_timestep_values - t.unsqueeze(1))
+                    )
+                    + 1e-7
+                ),
+                torch.tensor([1]).to(t.device),
+            ),
+            nan=0.0,
+        )
+        # factor_1 takes values in [0,1], value 1 when s=t and value 0 when s >= stopping time
+        factor1_non_zero = (stopping_timestep_values - 1e-3 > s.unsqueeze(1)).to(
+            torch.int
+        )
+        factor1 = factor1 * factor1_non_zero
+        # factor_1 is only non-zero when the process is not stopped at time s
+
+        exp_gamma3_fun = lambda x: torch.exp(-self.gamma3 * x)
+        not_stopped = (stopping_timestep_values > self.T - 1e-3).to(torch.int)
+        output1 = (
+            (1 - not_stopped) * factor1
+            + not_stopped * exp_gamma3_fun(s - t).unsqueeze(1)
+        ).unsqueeze(2).unsqueeze(3) * identity.repeat(
+            t.shape[0], not_stopped.shape[1], 1, 1
+        )
+        # when process is stopped, output1 = factor1 * identity, 
+        # when process is not stopped, output1 = exp(- gamma3 * (s - t)) * identity
+
+        fun_gamma2 = lambda x: (1 - torch.exp(-self.gamma2 * x)) * (
+            torch.exp(-self.gamma2 * x) - torch.exp(-self.gamma2)
+        )
+        # fun_gamma2 takes values in [0,1] when input is in [0,1], it maps 0 to 0 and 1 to 0
+
+        output2 = ((1 - not_stopped) * fun_gamma2(factor1)).unsqueeze(2).unsqueeze(
+            3
+        ) * sigmoid_layers_output_stopped + (
+            not_stopped * (1 - exp_gamma3_fun(s - t).unsqueeze(1))
+        ).unsqueeze(
+            2
+        ).unsqueeze(
+            3
+        ) * sigmoid_layers_output_not_stopped
+        # when process is stopped, output2 = fun_gamma2(factor1) * sigmoid_layers_output_stopped, 
+        # when process is not stopped, output2 = (1 - exp(- gamma3 * (s - t))) * sigmoid_layers_output_stopped
+
+        output = output1 + output2
         return output
