@@ -4,8 +4,6 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory.
 import torch
-import torch.nn.functional as F
-from matplotlib.patches import Rectangle
 
 from SOC_matching import method
 
@@ -73,13 +71,9 @@ class MolecularDynamics(method.NeuralSDE):
         x: (B, D)
         output: (B,)
         """
-        return torch.zeros_like(x[...,0])
+        return torch.zeros_like(x[..., 0])
 
     def nabla_g(self, x):
-        # with torch.enable_grad():
-        #     x = x.requires_grad_(True)
-        #     output = torch.autograd.grad(self.g(x).sum(), x)[0]
-        #     return output
         return torch.zeros_like(x)
 
     # Running cost
@@ -88,23 +82,14 @@ class MolecularDynamics(method.NeuralSDE):
         x: (T, B, D) or (B, D)
         output: (T, B) or (B)
         """
-        return torch.ones_like(x[...,0])
+        return torch.ones_like(x[..., 0])
 
     def nabla_f(self, t, x):
-        # with torch.enable_grad():
-        #     x = x.requires_grad_(True)
-        #     output = torch.autograd.grad(self.f(t, x).sum(), x)[0]
-        #     return output
         return torch.zeros_like(x)
 
-    def stopping_condition(self, x): # 0 if x is stopped, 1 if x is not stopped
-        if len(x.shape) == 2:
-            return (x[:,0] < 0).to(torch.int)
-        elif len(x.shape) == 3:
-            return (x[:,:,0] < 0).to(torch.int)
-        
+    # Stopping condition, process stops when Phi(x) < 0
     def Phi(self, x):
         if len(x.shape) == 2:
-            return - x[:,0]
+            return -x[:, 0]
         elif len(x.shape) == 3:
-            return - x[:,:,0]
+            return -x[:, :, 0]

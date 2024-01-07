@@ -13,11 +13,11 @@ import copy
 
 from SOC_matching.gsbm_lib import EndPointGaussianPath, GammaSpline, init_spline
 
+
 def stochastic_trajectories(
     sde,
     x0,
     t,
-    sigma,
     lmbd,
     detach=True,
     verbose=False,
@@ -30,106 +30,84 @@ def stochastic_trajectories(
     log_path_weight_deterministic = torch.zeros(x0.shape[0]).to(x0.device)
     log_path_weight_stochastic = torch.zeros(x0.shape[0]).to(x0.device)
     log_terminal_weight = torch.zeros(x0.shape[0]).to(x0.device)
-    stopping_condition = sde.stopping_condition if hasattr(sde, 'stopping_condition') else None
-    stop_inds = torch.ones(x0.shape[0]).to(x0.device) # ones if not stopped, zero if stopped
-    # print(f'torch.sum(stop_inds): {torch.sum(stop_inds)}')
+    stopping_condition = hasattr(sde, "Phi")  # If True process stops when Phi(X_t) < 0
+    stop_inds = torch.ones(x0.shape[0]).to(
+        x0.device
+    )  # ones if not stopped, zero if stopped
     for t0, t1 in zip(t[:-1], t[1:]):
         dt = t1 - t0
         noise = torch.randn_like(x0).to(x0.device)
         noises.append(noise)
         u0 = sde.control(t0, x0, verbose=verbose)
-        # print(f'x0.shape: {x0.shape}, stop_inds.shape: {stop_inds.shape}')
         if stopping_condition:
             Phi_values_before_update = sde.Phi(x0)
             x0_before = x0
         update = (
-            (sde.b(t0, x0) + torch.einsum("ij,bj->bi", sde.sigma, u0)) * dt
-            + torch.sqrt(lmbd * dt) * torch.einsum("ij,bj->bi", sde.sigma, noise)
-        )
-        # print(f'drift term: {torch.mean((sde.b(t0, x0) + torch.einsum("ij,bj->bi", sde.sigma, u0))**2 * dt**2)}')
-        # print(f'noise term: {torch.mean(torch.sqrt(lmbd * dt)**2 * torch.einsum("ij,bj->bi", sde.sigma, noise)**2)}')
-        # drift_term = torch.mean((sde.b(t0, x0) + torch.einsum("ij,bj->bi", sde.sigma, u0))**2 * dt**2)
-        # noise_term = torch.mean(torch.sqrt(lmbd * dt)**2 * torch.einsum("ij,bj->bi", sde.sigma, noise)**2)
-        # print(f'torch.sum((25 * drift_term > noise_term).to(torch.int))/torch.sum((noise_term > 0).to(torch.int)): {torch.sum((50 * drift_term > noise_term).to(torch.int))/torch.sum((noise_term > 0).to(torch.int))}')
-        # import ipdb
-        # ipdb.set_trace()
-        x0 = (
-            x0 + stop_inds.unsqueeze(1) * update
-        )
-        # print(f'x0.shape: {x0.shape}')
+            sde.b(t0, x0) + torch.einsum("ij,bj->bi", sde.sigma, u0)
+        ) * dt + torch.sqrt(lmbd * dt) * torch.einsum("ij,bj->bi", sde.sigma, noise)
+        x0 = x0 + stop_inds.unsqueeze(1) * update
         if stopping_condition:
             Phi_values_after_update = sde.Phi(x0)
-            not_stopped = torch.logical_and(Phi_values_before_update > 0, Phi_values_after_update > 0).to(torch.float)
-            just_stopped = torch.logical_and(Phi_values_before_update > 0, Phi_values_after_update < 0).to(torch.float)
-            # already_stopped = (Phi_values_before_update > 0).to(torch.float)
-            # step_fraction = stopping_condition_holds * (Phi_values_before_update / (Phi_values_before_update - Phi_values_after_update + 1e-3) + 1e-3)
-            step_fraction = just_stopped * ((Phi_values_before_update) / (Phi_values_before_update - Phi_values_after_update + 1e-6) + 1e-6)
-            # step_fractions.append(step_fraction)
-            # print(f'stopping_condition_holds.shape: {stopping_condition_holds.shape}')
-            # print(f'torch.mean(stopping_condition_holds): {torch.mean(stopping_condition_holds)}')
-            # print(f'torch.max(x0) before: {torch.max(x0)}')
-            # print(f'step_fraction: {step_fraction}')
-            x0 = (just_stopped.unsqueeze(1) * (x0_before + step_fraction.unsqueeze(1) * stop_inds.unsqueeze(1) * update) 
-                  + (1 - just_stopped.unsqueeze(1)) * x0) 
-            fractional_timestep = (just_stopped * step_fraction ** 2 * dt 
-                                   + not_stopped * dt) 
+            not_stopped = torch.logical_and(
+                Phi_values_before_update > 0, Phi_values_after_update > 0
+            ).to(torch.float)
+            just_stopped = torch.logical_and(
+                Phi_values_before_update > 0, Phi_values_after_update < 0
+            ).to(torch.float)
+            step_fraction = just_stopped * (
+                (Phi_values_before_update)
+                / (Phi_values_before_update - Phi_values_after_update + 1e-6)
+                + 1e-6
+            )
+            x0 = (
+                just_stopped.unsqueeze(1)
+                * (
+                    x0_before
+                    + step_fraction.unsqueeze(1) * stop_inds.unsqueeze(1) * update
+                )
+                + (1 - just_stopped.unsqueeze(1)) * x0
+            )
+            fractional_timestep = (
+                just_stopped * step_fraction**2 * dt + not_stopped * dt
+            )
             fractional_timesteps.append(fractional_timestep)
-            # print(f'torch.max(x0) after: {torch.max(x0)}')
-            # print(f'x0.shape after: {x0.shape}')
-            # print(f'Phi_values_after_update: {Phi_values_after_update}')
-            # print(f'Phi_values_before_update - Phi_values_after_update: {Phi_values_before_update - Phi_values_after_update}')
-            # print(f'stopping_condition_holds: {stopping_condition_holds}')
-            # print(f'step_fraction: {step_fraction}')
-            # print(f'(x0_before + step_fraction.unsqueeze(1) * stop_inds.unsqueeze(1) * update): {(x0_before + step_fraction.unsqueeze(1) * stop_inds.unsqueeze(1) * update)}')
-            # print(f'x0: {x0}')
-            # stop_inds = stopping_condition(x0)
-            stop_inds = (sde.Phi(x0) > 0)
+            stop_inds = sde.Phi(x0) > 0
             stop_indicators.append(stop_inds)
         else:
             fractional_timesteps.append(dt * torch.ones(x0.shape[0]).to(x0.device))
             stop_indicators.append(torch.ones(x0.shape[0]).to(x0.device))
-        # print(f'torch.sqrt(torch.max((sde.b(t0, x0) + torch.einsum("ij,bj->bi", sde.sigma, u0))**2 * dt**2)): {torch.sqrt(torch.max((sde.b(t0, x0) + torch.einsum("ij,bj->bi", sde.sigma, u0))**2 * dt**2))}')
-        # print(f'torch.sqrt(torch.max(torch.sqrt(lmbd * dt)**2 * torch.einsum("ij,bj->bi", sde.sigma, noise)**2)): {torch.sqrt(torch.max(torch.sqrt(lmbd * dt)**2 * torch.einsum("ij,bj->bi", sde.sigma, noise)**2))}')
         xt.append(x0)
         controls.append(u0)
 
-        # print(f'log_path_weight_deterministic.shape: {log_path_weight_deterministic.shape}, stop_inds.shape: {stop_inds.shape}')
-        # print(f'sde.f(t0, x0).shape: {sde.f(t0, x0).shape}')
-        # print(f'torch.sum(u0**2, dim=1).shape: {torch.sum(u0**2, dim=1).shape}')
         if stopping_condition:
-            # log_path_weight_deterministic = log_path_weight_deterministic + stop_inds * ( fractional_timestep / lmbd * (
-            #     -sde.f(t0, x0) - 0.5 * torch.sum(u0**2, dim=1)
-            # )
-            # )
-            # log_path_weight_stochastic = log_path_weight_stochastic + stop_inds * ( torch.sqrt(
-            #     fractional_timestep / lmbd
-            # ) * (-torch.sum(u0 * noise, dim=1))
-            # )
-            log_path_weight_deterministic = log_path_weight_deterministic + fractional_timestep / lmbd * (
-                -sde.f(t0, x0) - 0.5 * torch.sum(u0**2, dim=1)
+            log_path_weight_deterministic = (
+                log_path_weight_deterministic
+                + fractional_timestep
+                / lmbd
+                * (-sde.f(t0, x0) - 0.5 * torch.sum(u0**2, dim=1))
             )
             log_path_weight_stochastic = log_path_weight_stochastic + torch.sqrt(
                 fractional_timestep / lmbd
             ) * (-torch.sum(u0 * noise, dim=1))
         else:
-            log_path_weight_deterministic = log_path_weight_deterministic + dt / lmbd * (
-                -sde.f(t0, x0) - 0.5 * torch.sum(u0**2, dim=1)
+            log_path_weight_deterministic = (
+                log_path_weight_deterministic
+                + dt / lmbd * (-sde.f(t0, x0) - 0.5 * torch.sum(u0**2, dim=1))
             )
             log_path_weight_stochastic = log_path_weight_stochastic + torch.sqrt(
                 dt / lmbd
             ) * (-torch.sum(u0 * noise, dim=1))
 
     log_terminal_weight = -sde.g(x0) / lmbd
-    # print(f'torch.min(sde.Phi(x0)): {torch.min(sde.Phi(x0))}, torch.max(sde.Phi(x0)): {torch.max(sde.Phi(x0))}')
-    # print(f'torch.min(sde.Phi(xt[0])): {torch.min(sde.Phi(xt[0]))}, torch.max(sde.Phi(xt[0])): {torch.max(sde.Phi(xt[0]))}')
-    # print(f'torch.min(sde.Phi(xt[1])): {torch.min(sde.Phi(xt[1]))}, torch.max(sde.Phi(xt[1])): {torch.max(sde.Phi(xt[1]))}')
 
     if detach:
         return (
             torch.stack(xt).detach(),
             torch.stack(noises).detach(),
             torch.stack(stop_indicators).detach(),
-            torch.stack(fractional_timesteps).detach() if len(fractional_timesteps) > 0 else None,
+            torch.stack(fractional_timesteps).detach()
+            if len(fractional_timesteps) > 0
+            else None,
             log_path_weight_deterministic.detach(),
             log_path_weight_stochastic.detach(),
             log_terminal_weight.detach(),
@@ -140,15 +118,18 @@ def stochastic_trajectories(
             torch.stack(xt),
             torch.stack(noises),
             torch.stack(stop_indicators),
-            torch.stack(fractional_timesteps).detach() if len(fractional_timesteps) > 0 else None,
+            torch.stack(fractional_timesteps).detach()
+            if len(fractional_timesteps) > 0
+            else None,
             log_path_weight_deterministic,
             log_path_weight_stochastic,
             log_terminal_weight,
             torch.stack(controls),
         )
 
+
 def control_objective(
-    sde, x0, ts, sigma, lmbd, batch_size, total_n_samples=65536, verbose=False
+    sde, x0, ts, lmbd, batch_size, total_n_samples=65536, verbose=False
 ):
     n_batches = int(total_n_samples // batch_size)
     effective_n_samples = n_batches * batch_size
@@ -167,7 +148,6 @@ def control_objective(
             sde,
             state0,
             ts.to(state0),
-            sigma,
             lmbd,
             verbose=verbose,
         )
@@ -182,7 +162,10 @@ def control_objective(
         effective_n_samples - 1
     )
 
-def normalization_constant(sde, x0, ts, sigma, cfg, n_batches_normalization = 512, ground_truth_control=None):
+
+def normalization_constant(
+    sde, x0, ts, cfg, n_batches_normalization=512, ground_truth_control=None
+):
     log_weights_list = []
     weights_list = []
 
@@ -202,10 +185,13 @@ def normalization_constant(sde, x0, ts, sigma, cfg, n_batches_normalization = 51
             sde,
             x0,
             ts.to(x0),
-            sigma,
             cfg.method.lmbd,
         )
-        log_weights = log_path_weight_deterministic + log_path_weight_stochastic + log_terminal_weight
+        log_weights = (
+            log_path_weight_deterministic
+            + log_path_weight_stochastic
+            + log_terminal_weight
+        )
         log_weights_list.append(log_weights)
         weights = torch.exp(
             log_path_weight_deterministic
@@ -215,7 +201,9 @@ def normalization_constant(sde, x0, ts, sigma, cfg, n_batches_normalization = 51
         weights_list.append(weights)
 
         if ground_truth_control is not None:
-            gt_controls = ground_truth_control(ts, states, t_is_tensor=True)[:-1, :, :].detach()
+            gt_controls = ground_truth_control(ts, states, t_is_tensor=True)[
+                :-1, :, :
+            ].detach()
             norm_sqd_diff = torch.sum(
                 (gt_controls - controls) ** 2
                 * weights.unsqueeze(0).unsqueeze(2)
@@ -232,11 +220,16 @@ def normalization_constant(sde, x0, ts, sigma, cfg, n_batches_normalization = 51
     log_weights = torch.stack(log_weights_list, dim=1)
     weights = torch.stack(weights_list, dim=1)
 
-    print(f'Average and std. dev. of log_weights for all batches: {torch.mean(log_weights)} {torch.std(log_weights)}')
+    print(
+        f"Average and std. dev. of log_weights for all batches: {torch.mean(log_weights)} {torch.std(log_weights)}"
+    )
 
     normalization_const = torch.mean(weights)
-    normalization_const_std_error = torch.std(weights) / np.sqrt(weights.shape[0] * weights.shape[1] - 1)
+    normalization_const_std_error = torch.std(weights) / np.sqrt(
+        weights.shape[0] * weights.shape[1] - 1
+    )
     return normalization_const, normalization_const_std_error, norm_sqd_diff_mean
+
 
 def solution_Ricatti(R_inverse, A, P, Q, t):
     FT = Q
@@ -264,61 +257,109 @@ def optimal_control_LQ(sigma, A, P, Q, t):
 def exponential_t_A(t, A):
     return torch.matrix_exp(t.unsqueeze(1).unsqueeze(2) * A.unsqueeze(0))
 
+
 def get_folder_name(cfg):
-    folder_name = (cfg.method.algorithm + '_' + 
-                   cfg.method.setting + '_' + 
-                   str(cfg.method.lmbd) + '_' + 
-                   str(cfg.method.T) + '_' +
-                   str(cfg.method.num_steps) + '_' + 
-                   str(cfg.method.use_warm_start) + '_' +
-                   str(cfg.method.seed) + '_' + 
-                   str(cfg.optim.batch_size) + '_' +
-                   str(cfg.optim.M_lr) + '_' +
-                   str(cfg.optim.nabla_V_lr))
+    folder_name = (
+        cfg.method.algorithm
+        + "_"
+        + cfg.method.setting
+        + "_"
+        + str(cfg.method.lmbd)
+        + "_"
+        + str(cfg.method.T)
+        + "_"
+        + str(cfg.method.num_steps)
+        + "_"
+        + str(cfg.method.use_warm_start)
+        + "_"
+        + str(cfg.method.seed)
+        + "_"
+        + str(cfg.optim.batch_size)
+        + "_"
+        + str(cfg.optim.M_lr)
+        + "_"
+        + str(cfg.optim.nabla_V_lr)
+    )
     return folder_name
+
 
 def get_folder_names_plots(cfg):
     folder_names = []
-    if cfg.method.setting == 'molecular_dynamics':
-        algorithms = ['SOCM',
-                      'rel_entropy', 
-                      'cross_entropy', 'log-variance', 
-                      'moment', 'variance']
+    if cfg.method.setting == "molecular_dynamics":
+        algorithms = [
+            "SOCM",
+            "rel_entropy",
+            "cross_entropy",
+            "log-variance",
+            "moment",
+            "variance",
+        ]
     else:
-        algorithms = ['SOCM',
-                      'SOCM_const_M',
-                      'rel_entropy', 
-                      'cross_entropy', 'log-variance', 
-                      'moment', 'variance']
+        algorithms = [
+            "SOCM",
+            "SOCM_const_M",
+            "rel_entropy",
+            "cross_entropy",
+            "log-variance",
+            "moment",
+            "variance",
+        ]
     for k, algorithm in enumerate(algorithms):
-        folder_name = ('../../outputs/multiruns/' + str(k) + '/' + algorithm + '_' + 
-                       cfg.method.setting + '_' + 
-                       str(cfg.method.lmbd) + '_' + 
-                       str(cfg.method.T) + '_' +
-                       str(cfg.method.num_steps) + '_' +
-                       str(cfg.method.use_warm_start) + '_' +
-                       str(cfg.method.seed) + '_' +
-                       str(cfg.optim.batch_size) + '_' +
-                       str(cfg.optim.M_lr) + '_' +
-                       str(cfg.optim.nabla_V_lr))
+        folder_name = (
+            "../../outputs/multiruns/"
+            + str(k)
+            + "/"
+            + algorithm
+            + "_"
+            + cfg.method.setting
+            + "_"
+            + str(cfg.method.lmbd)
+            + "_"
+            + str(cfg.method.T)
+            + "_"
+            + str(cfg.method.num_steps)
+            + "_"
+            + str(cfg.method.use_warm_start)
+            + "_"
+            + str(cfg.method.seed)
+            + "_"
+            + str(cfg.optim.batch_size)
+            + "_"
+            + str(cfg.optim.M_lr)
+            + "_"
+            + str(cfg.optim.nabla_V_lr)
+        )
         folder_names.append(folder_name)
-    plots_folder_name = ('../../outputs/multiruns/plots/' + cfg.method.setting + '_' + 
-                         str(cfg.method.lmbd) + '_' + 
-                         str(cfg.method.T) + '_' +
-                         str(cfg.method.num_steps) + '_' +
-                         str(cfg.method.use_warm_start) + '_' +
-                         str(cfg.method.seed) + '_' + 
-                         str(cfg.optim.batch_size) + '_' +
-                         str(cfg.optim.M_lr) + '_' +
-                         str(cfg.optim.nabla_V_lr))
+    plots_folder_name = (
+        "../../outputs/multiruns/plots/"
+        + cfg.method.setting
+        + "_"
+        + str(cfg.method.lmbd)
+        + "_"
+        + str(cfg.method.T)
+        + "_"
+        + str(cfg.method.num_steps)
+        + "_"
+        + str(cfg.method.use_warm_start)
+        + "_"
+        + str(cfg.method.seed)
+        + "_"
+        + str(cfg.optim.batch_size)
+        + "_"
+        + str(cfg.optim.M_lr)
+        + "_"
+        + str(cfg.optim.nabla_V_lr)
+    )
     return folder_names, plots_folder_name
+
 
 def get_file_name(folder_name, num_iterations=0, last=False):
     if last:
         return folder_name + "/last.pkl"
     file_name = str(num_iterations)
-    print(f'folder_name: {folder_name}')
+    print(f"folder_name: {folder_name}")
     return folder_name + "/" + file_name + ".pkl"
+
 
 def get_file_names_plots(folder_names, num_iterations=0, last=False):
     file_names = []
@@ -326,9 +367,10 @@ def get_file_names_plots(folder_names, num_iterations=0, last=False):
         if last:
             file_name = folder_name + "/last.pkl"
         else:
-            file_name = folder_name + "/" + str(num_iterations) + ".pkl" 
+            file_name = folder_name + "/" + str(num_iterations) + ".pkl"
         file_names.append(file_name)
     return file_names
+
 
 def save_results(results, folder_name, file_name):
     if not os.path.exists(folder_name):
@@ -391,7 +433,7 @@ def fit_gpath(problem, gpath, optim_cfg, eps=0.001, verbose=False):
         assert xt.shape == ut.shape == (B, N, T, D)
         xt = xt.reshape(-1, T, D).permute(1, 0, 2)
         ut = ut.reshape(-1, T, D).permute(1, 0, 2)
-        
+
         b_eval = problem.b(t, xt)
         cost_s = problem.f(t, xt).mean() * problem.T
         ctrl = torch.einsum("ij,...j->...i", sigma_inverse, ut - b_eval)
@@ -423,9 +465,9 @@ def fit_gpath(problem, gpath, optim_cfg, eps=0.001, verbose=False):
 
     gpath.eval()
 
-    results["final_mean"] = copy.deepcopy(gpath.mean)  
-    results["final_gamma"] = copy.deepcopy(gpath.gamma)  
-    results["gpath"] = copy.deepcopy(gpath)  
+    results["final_mean"] = copy.deepcopy(gpath.mean)
+    results["final_gamma"] = copy.deepcopy(gpath.gamma)
+    results["gpath"] = copy.deepcopy(gpath)
     results["losses"] = losses
 
     return results

@@ -70,16 +70,27 @@ def main(cfg: DictConfig):
         cfg.method.device = "cpu"
     torch.manual_seed(cfg.method.seed)
     algorithm = cfg.method.algorithm
-    folder_name = (cfg.method.algorithm + '_' + 
-                   cfg.method.setting + '_' + 
-                   str(cfg.method.lmbd) + '_' + 
-                   str(cfg.method.T) + '_' +
-                   str(cfg.method.num_steps) + '_' +
-                   str(cfg.method.use_warm_start) + '_' +
-                   str(cfg.method.seed) + '_' +  
-                   str(cfg.optim.batch_size) + '_' +
-                   str(cfg.optim.M_lr) + '_' +
-                   str(cfg.optim.nabla_V_lr))
+    folder_name = (
+        cfg.method.algorithm
+        + "_"
+        + cfg.method.setting
+        + "_"
+        + str(cfg.method.lmbd)
+        + "_"
+        + str(cfg.method.T)
+        + "_"
+        + str(cfg.method.num_steps)
+        + "_"
+        + str(cfg.method.use_warm_start)
+        + "_"
+        + str(cfg.method.seed)
+        + "_"
+        + str(cfg.optim.batch_size)
+        + "_"
+        + str(cfg.optim.M_lr)
+        + "_"
+        + str(cfg.optim.nabla_V_lr)
+    )
 
     ts = torch.linspace(0, cfg.method.T, cfg.method.num_steps + 1).to(cfg.method.device)
 
@@ -100,16 +111,23 @@ def main(cfg: DictConfig):
     state0 = x0.repeat(cfg.optim.batch_size, 1)
 
     ########### Compute normalization constant and control L2 error for initial control ############
-    print(f'Estimating normalization constant and control L2 error for initial control...')
-    normalization_const, normalization_const_std_error, norm_sqd_diff_mean = normalization_constant(neural_sde, 
-                                                                                                    state0, 
-                                                                                                    ts, 
-                                                                                                    sigma, 
-                                                                                                    cfg, 
-                                                                                                    n_batches_normalization = 512, 
-                                                                                                    ground_truth_control=ground_truth_control)
     print(
-       f"Normalization_constant (mean and std. error): {normalization_const:5.8E} {normalization_const_std_error:5.8E}"
+        f"Estimating normalization constant and control L2 error for initial control..."
+    )
+    (
+        normalization_const,
+        normalization_const_std_error,
+        norm_sqd_diff_mean,
+    ) = normalization_constant(
+        neural_sde,
+        state0,
+        ts,
+        cfg,
+        n_batches_normalization=512,
+        ground_truth_control=ground_truth_control,
+    )
+    print(
+        f"Normalization_constant (mean and std. error): {normalization_const:5.8E} {normalization_const_std_error:5.8E}"
     )
     if ground_truth_control is not None:
         print(
@@ -118,11 +136,13 @@ def main(cfg: DictConfig):
 
     ########### Compute control loss for optimal control ############
     if optimal_sde is not None:
-        optimal_control_objective_mean, optimal_control_objective_std_error = control_objective(
+        (
+            optimal_control_objective_mean,
+            optimal_control_objective_std_error,
+        ) = control_objective(
             optimal_sde,
             x0,
             ts,
-            sigma,
             cfg.method.lmbd,
             cfg.optim.batch_size,
             total_n_samples=cfg.method.n_samples_control,
@@ -247,9 +267,9 @@ def main(cfg: DictConfig):
     for var in control_objective_variables:
         training_info[var] = []
     if cfg.method.use_warm_start:
-        training_info['restricted_control'] = u_warm_start
-        training_info['trajectories'] = []
-    training_info['cfg'] = cfg
+        training_info["restricted_control"] = u_warm_start
+        training_info["trajectories"] = []
+    training_info["cfg"] = cfg
 
     compute_L2_error = ground_truth_control is not None
 
@@ -259,9 +279,12 @@ def main(cfg: DictConfig):
             for itr in range(cfg.method.num_iterations):
                 start = time.time()
 
-                compute_control_objective = (itr == 0
-                    or itr % cfg.method.compute_control_objective_every == cfg.method.compute_control_objective_every - 1
-                    or itr == cfg.method.num_iterations - 1)
+                compute_control_objective = (
+                    itr == 0
+                    or itr % cfg.method.compute_control_objective_every
+                    == cfg.method.compute_control_objective_every - 1
+                    or itr == cfg.method.num_iterations - 1
+                )
                 verbose = itr == 0
                 (
                     loss,
@@ -325,7 +348,7 @@ def main(cfg: DictConfig):
                     optimizer.zero_grad()
 
                     end = time.time()
-                    time_per_iteration = end-start
+                    time_per_iteration = end - start
 
                     normalization_const = compute_EMA(
                         weight_mean.detach(),
@@ -343,7 +366,10 @@ def main(cfg: DictConfig):
                             EMA_norm_sqd_diff = norm_sqd_diff.detach()
                     else:
                         EMA_time_per_iteration = compute_EMA(
-                            time_per_iteration, EMA_time_per_iteration, EMA_coeff=EMA_coeff, itr=itr
+                            time_per_iteration,
+                            EMA_time_per_iteration,
+                            EMA_coeff=EMA_coeff,
+                            itr=itr,
                         )
                         EMA_loss = compute_EMA(
                             loss.detach(), EMA_loss, EMA_coeff=EMA_coeff, itr=itr
@@ -369,7 +395,9 @@ def main(cfg: DictConfig):
                             )
 
                     training_info["time_per_iteration"].append(time_per_iteration)
-                    training_info["EMA_time_per_iteration"].append(EMA_time_per_iteration)
+                    training_info["EMA_time_per_iteration"].append(
+                        EMA_time_per_iteration
+                    )
                     training_info["loss"].append(loss.detach())
                     training_info["EMA_loss"].append(EMA_loss)
                     training_info["weight_mean"].append(weight_mean.detach())
@@ -401,7 +429,9 @@ def main(cfg: DictConfig):
                                 f"soc_solver.neural_sde.M.gamma: {soc_solver.neural_sde.M.gamma.item()}"
                             )
                         if cfg.method.use_stopping_time:
-                            print(f'torch.mean(stop_indicators): {torch.mean(stop_indicators)}')
+                            print(
+                                f"torch.mean(stop_indicators): {torch.mean(stop_indicators)}"
+                            )
 
                         end = time.time()
 
@@ -411,9 +441,12 @@ def main(cfg: DictConfig):
                         new_lr = optimizer.param_groups[-1]["lr"]
                         print(f"current_lr: {current_lr}, new_lr: {new_lr}")
 
-                    if (itr == 0
-                        or itr % cfg.method.compute_control_objective_every == cfg.method.compute_control_objective_every - 1
-                        or itr == cfg.method.num_iterations - 1):
+                    if (
+                        itr == 0
+                        or itr % cfg.method.compute_control_objective_every
+                        == cfg.method.compute_control_objective_every - 1
+                        or itr == cfg.method.num_iterations - 1
+                    ):
                         print(
                             f"Control loss mean: {control_objective_mean:5.5f}, Control loss std. error: {control_objective_std_err:5.5f}"
                         )
@@ -424,7 +457,7 @@ def main(cfg: DictConfig):
                             control_objective_std_err.detach()
                         )
                         training_info["control_objective_itr"].append(itr + 1)
-                        training_info['trajectories'].append(trajectory)
+                        training_info["trajectories"].append(trajectory)
 
                         soc_solver.num_iterations = itr + 1
 

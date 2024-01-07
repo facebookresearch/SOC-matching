@@ -23,7 +23,10 @@ from SOC_matching.experiment_settings.molecular_dynamics import MolecularDynamic
 
 
 def ground_truth_control(cfg, ts, x0, **kwargs):
-    if cfg.method.setting == "OU_quadratic_easy" or cfg.method.setting == "OU_quadratic_hard":
+    if (
+        cfg.method.setting == "OU_quadratic_easy"
+        or cfg.method.setting == "OU_quadratic_hard"
+    ):
         R_inverse = torch.matmul(
             kwargs["sigma"], torch.transpose(kwargs["sigma"], 0, 1)
         )
@@ -110,10 +113,11 @@ def ground_truth_control(cfg, ts, x0, **kwargs):
         optimal_sde = None
         return optimal_sde
 
+
 def set_warm_start(cfg, sde, x0, sigma):
     if cfg.method.use_warm_start:
         # Use Gaussian path
-        print(f'Solving Restricted Gaussian Stochastic Optimal Control problem...')
+        print(f"Solving Restricted Gaussian Stochastic Optimal Control problem...")
         if cfg.method.setting == "multiagent_8":
             endpoints = sde.g_center
         else:
@@ -124,15 +128,23 @@ def set_warm_start(cfg, sde, x0, sigma):
 
         gpath = result_spline["gpath"]
         u_warm_start = RestrictedControl(
-            gpath, sigma, sde.b, cfg.method.device, cfg.method.T, cfg.method.num_splines,
+            gpath,
+            sigma,
+            sde.b,
+            cfg.method.device,
+            cfg.method.T,
+            cfg.method.num_splines,
         )
-        # sde.u = u_warm_start
         return u_warm_start
     else:
         return None
 
+
 def define_neural_sde(cfg, ts, x0, u_warm_start, **kwargs):
-    if cfg.method.setting == "OU_quadratic_easy" or cfg.method.setting == "OU_quadratic_hard":
+    if (
+        cfg.method.setting == "OU_quadratic_easy"
+        or cfg.method.setting == "OU_quadratic_hard"
+    ):
         neural_sde = OU_Quadratic(
             device=cfg.method.device,
             dim=cfg.method.d,
@@ -194,8 +206,12 @@ def define_neural_sde(cfg, ts, x0, u_warm_start, **kwargs):
     neural_sde.initialize_models()
     return neural_sde
 
+
 def define_variables(cfg, ts):
-    if cfg.method.setting == "OU_quadratic_easy" or cfg.method.setting == "OU_quadratic_hard":
+    if (
+        cfg.method.setting == "OU_quadratic_easy"
+        or cfg.method.setting == "OU_quadratic_hard"
+    ):
         if cfg.method.d == 2:
             x0 = torch.tensor([0.4, 0.6]).to(cfg.method.device)
         else:
@@ -203,17 +219,15 @@ def define_variables(cfg, ts):
         print(f"x0: {x0}")
         sigma = torch.eye(cfg.method.d).to(cfg.method.device)
         if cfg.method.setting == "OU_quadratic_hard":
-            A = 1.0 * torch.eye(cfg.method.d).to(cfg.method.device)  
-            P = 1.0 * torch.eye(cfg.method.d).to(cfg.method.device)  
-            Q = 0.5 * torch.eye(cfg.method.d).to(cfg.method.device)  
+            A = 1.0 * torch.eye(cfg.method.d).to(cfg.method.device)
+            P = 1.0 * torch.eye(cfg.method.d).to(cfg.method.device)
+            Q = 0.5 * torch.eye(cfg.method.d).to(cfg.method.device)
         elif cfg.method.setting == "OU_quadratic_easy":
-            A = 0.2 * torch.eye(cfg.method.d).to(cfg.method.device)  
-            P = 0.2 * torch.eye(cfg.method.d).to(cfg.method.device)  
-            Q = 0.1 * torch.eye(cfg.method.d).to(cfg.method.device)  
+            A = 0.2 * torch.eye(cfg.method.d).to(cfg.method.device)
+            P = 0.2 * torch.eye(cfg.method.d).to(cfg.method.device)
+            Q = 0.1 * torch.eye(cfg.method.d).to(cfg.method.device)
 
-        optimal_sde = ground_truth_control(
-            cfg, ts, x0, sigma=sigma, A=A, P=P, Q=Q
-        )
+        optimal_sde = ground_truth_control(cfg, ts, x0, sigma=sigma, A=A, P=P, Q=Q)
         u_warm_start = set_warm_start(cfg, optimal_sde, x0, sigma)
         neural_sde = define_neural_sde(
             cfg, ts, x0, u_warm_start, sigma=sigma, A=A, P=P, Q=Q
@@ -228,9 +242,7 @@ def define_variables(cfg, ts):
         A = -torch.eye(cfg.method.d).to(cfg.method.device) + xi
         sigma = torch.eye(cfg.method.d).to(cfg.method.device) + xi
 
-        optimal_sde = ground_truth_control(
-            cfg, ts, x0, sigma=sigma, omega=omega, A=A
-        )
+        optimal_sde = ground_truth_control(cfg, ts, x0, sigma=sigma, omega=omega, A=A)
         u_warm_start = set_warm_start(cfg, optimal_sde, x0, sigma)
         neural_sde = define_neural_sde(
             cfg, ts, x0, u_warm_start, sigma=sigma, omega=omega, A=A
@@ -254,34 +266,36 @@ def define_variables(cfg, ts):
 
         sigma = torch.eye(cfg.method.d).to(cfg.method.device)
 
-        optimal_sde = ground_truth_control(
-            cfg, ts, x0, sigma=sigma, kappa=kappa, nu=nu
-        )
+        optimal_sde = ground_truth_control(cfg, ts, x0, sigma=sigma, kappa=kappa, nu=nu)
         u_warm_start = set_warm_start(cfg, optimal_sde, x0, sigma)
         neural_sde = define_neural_sde(
             cfg, ts, x0, u_warm_start, sigma=sigma, kappa=kappa, nu=nu
         )
 
         return x0, sigma, optimal_sde, neural_sde, u_warm_start
-    
+
     elif cfg.method.setting == "molecular_dynamics":
         print(f"molecular_dynamics")
-        x0 = - torch.ones(cfg.method.d).to(cfg.method.device)
+        x0 = -torch.ones(cfg.method.d).to(cfg.method.device)
 
-        # kappa_i = 5
         kappa = torch.ones(cfg.method.d).to(cfg.method.device)
-        # kappa[0] = kappa_i
-        # kappa[1] = kappa_i
-        # kappa[2] = kappa_i
-
         sigma = torch.eye(cfg.method.d).to(cfg.method.device)
 
         optimal_sde = ground_truth_control(
-            cfg, ts, x0, sigma=sigma, kappa=kappa, 
+            cfg,
+            ts,
+            x0,
+            sigma=sigma,
+            kappa=kappa,
         )
         u_warm_start = set_warm_start(cfg, optimal_sde, x0, sigma)
         neural_sde = define_neural_sde(
-            cfg, ts, x0, u_warm_start, sigma=sigma, kappa=kappa,
+            cfg,
+            ts,
+            x0,
+            u_warm_start,
+            sigma=sigma,
+            kappa=kappa,
         )
 
         return x0, sigma, optimal_sde, neural_sde, u_warm_start
