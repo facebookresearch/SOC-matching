@@ -314,6 +314,7 @@ def main(cfg: DictConfig):
                     algorithm == "SOCM_const_M"
                     or algorithm == "SOCM_exp"
                     or algorithm == "SOCM"
+                    or algorithm == "SOCM_adjoint"
                     or algorithm == "cross_entropy"
                 ):
                     loss = loss / normalization_const

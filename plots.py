@@ -66,7 +66,7 @@ def plot_loss(
     lss = ["-", "-.", ":", "--", "--", "-.", ":", "-", "--", "-.", ":", "-"] * 5
     cmap = mpl.cm.get_cmap("Set1")
     if use_fixed_colors:
-        colors_cmap = cmap([0, 1, 2, 3, 4, 6, 7])
+        colors_cmap = cmap([0, 1, 2, 3, 4, 6, 7, 8])
 
     plt.figure()
 
@@ -225,6 +225,7 @@ def main(cfg: DictConfig):
         legend_names = [
             "SOCM (ours)",
             "SOCM " + r"$M_t=I$" + " (ours)",
+            "SOCM Adjoint (ours)",
             "Adjoint",
             "Cross Entropy",
             "Log-Variance",
@@ -240,7 +241,6 @@ def main(cfg: DictConfig):
     ylim_inf_grad = None
     ylim_sup_grad = None
     plot_norm_sqd_diff = True
-    plot_normalized_weight_variance = False
     title = None
     use_fixed_colors = True
 
@@ -265,35 +265,34 @@ def main(cfg: DictConfig):
 
     last_algorithm = {}
     if cfg.method.setting == "OU_quadratic_easy":
-        last_algorithm["EMA_norm_sqd_diff"] = 7
-        last_algorithm["EMA_grad_norm_sqd"] = 7
-        last_algorithm["control_objective_mean"] = 6
+        last_algorithm["EMA_norm_sqd_diff"] = 8
+        last_algorithm["EMA_grad_norm_sqd"] = 8
+        last_algorithm["control_objective_mean"] = 7
         title = r"Quadratic Ornstein Uhlenbeck, easy ($d=20$)"
     elif cfg.method.setting == "OU_quadratic_hard" and cfg.method.use_warm_start:
-        last_algorithm["EMA_norm_sqd_diff"] = 7
-        last_algorithm["EMA_grad_norm_sqd"] = 7
-        last_algorithm["control_objective_mean"] = 6
+        last_algorithm["EMA_norm_sqd_diff"] = 8
+        last_algorithm["EMA_grad_norm_sqd"] = 8
+        last_algorithm["control_objective_mean"] = 7
         title = r"Quadratic Ornstein Uhlenbeck, hard, warm start ($d=20$)"
     elif cfg.method.setting == "OU_quadratic_hard" and not cfg.method.use_warm_start:
-        last_algorithm["EMA_norm_sqd_diff"] = 7
-        last_algorithm["EMA_grad_norm_sqd"] = 6
-        last_algorithm["control_objective_mean"] = 6
-        title = r"Quadratic Ornstein Uhlenbeck, hard, no warm start ($d=20$)"
-    elif cfg.method.setting == "OU_linear":
-        last_algorithm["EMA_norm_sqd_diff"] = 7
-        last_algorithm["EMA_grad_norm_sqd"] = 7
-        last_algorithm["control_objective_mean"] = 6
-        title = r"Linear Ornstein Uhlenbeck ($d=10$)"
-    elif cfg.method.setting == "double_well":
-        last_algorithm["EMA_norm_sqd_diff"] = 7
-        last_algorithm["EMA_grad_norm_sqd"] = 7
-        last_algorithm["control_objective_mean"] = 6
-        title = r"Double Well ($d=10$)"
-    elif cfg.method.setting == "molecular_dynamics":
+        last_algorithm["EMA_norm_sqd_diff"] = 8
         last_algorithm["EMA_grad_norm_sqd"] = 7
         last_algorithm["control_objective_mean"] = 7
+        title = r"Quadratic Ornstein Uhlenbeck, hard, no warm start ($d=20$)"
+    elif cfg.method.setting == "OU_linear":
+        last_algorithm["EMA_norm_sqd_diff"] = 8
+        last_algorithm["EMA_grad_norm_sqd"] = 8
+        last_algorithm["control_objective_mean"] = 7
+        title = r"Linear Ornstein Uhlenbeck ($d=10$)"
+    elif cfg.method.setting == "double_well":
+        last_algorithm["EMA_norm_sqd_diff"] = 8
+        last_algorithm["EMA_grad_norm_sqd"] = 8
+        last_algorithm["control_objective_mean"] = 7
+        title = r"Double Well ($d=10$)"
+    elif cfg.method.setting == "molecular_dynamics":
+        last_algorithm["EMA_grad_norm_sqd"] = 8
+        last_algorithm["control_objective_mean"] = 8
         plot_norm_sqd_diff = False
-        plot_normalized_weight_variance = True
         title = r"Molecular dynamics ($d=1$)"
 
     if cfg.method.setting == "OU_quadratic_hard" and not cfg.method.use_warm_start:
@@ -364,17 +363,16 @@ def main(cfg: DictConfig):
             title=title,
             use_fixed_colors=use_fixed_colors,
         )
-        if plot_normalized_weight_variance:
-            plot_loss(
-                soc_solver_list,
-                cfg,
-                variable="normalized_IW_std_dev",
-                save_figure=True,
-                plots_folder_name=plots_folder_name,
-                file_name=file_name,
-                title=title,
-                use_fixed_colors=use_fixed_colors,
-            )
+        plot_loss(
+            soc_solver_list,
+            cfg,
+            variable="normalized_IW_std_dev",
+            save_figure=True,
+            plots_folder_name=plots_folder_name,
+            file_name=file_name,
+            title=title,
+            use_fixed_colors=use_fixed_colors,
+        )
 
     else:
         print(f"file_name does not exist")

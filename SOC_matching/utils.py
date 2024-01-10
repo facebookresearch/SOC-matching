@@ -298,6 +298,7 @@ def get_folder_names_plots(cfg):
         algorithms = [
             "SOCM",
             "SOCM_const_M",
+            "SOCM_adjoint",
             "rel_entropy",
             "cross_entropy",
             "log-variance",

@@ -645,18 +645,32 @@ class SOC_Solver(nn.Module):
                     self.neural_sde.nabla_g(states[-1, :, :]),
                 )
 
-            least_squares_target_integrand_term_1_times_dt = (
-                least_squares_target_integrand_term_1
-                * fractional_timesteps.unsqueeze(0).unsqueeze(3)
-            )
-            least_squares_target_integrand_term_2_times_sqrt_dt = (
-                least_squares_target_integrand_term_2
-                * torch.sqrt(fractional_timesteps).unsqueeze(0).unsqueeze(3)
-            )
-            least_squares_target_integrand_term_3_times_dt = (
-                least_squares_target_integrand_term_3
-                * fractional_timesteps.unsqueeze(0).unsqueeze(3)
-            )
+            if use_stopping_time:
+                least_squares_target_integrand_term_1_times_dt = (
+                    least_squares_target_integrand_term_1
+                    * fractional_timesteps.unsqueeze(0).unsqueeze(3)
+                )
+                least_squares_target_integrand_term_2_times_sqrt_dt = (
+                    least_squares_target_integrand_term_2
+                    * torch.sqrt(fractional_timesteps).unsqueeze(0).unsqueeze(3)
+                )
+                least_squares_target_integrand_term_3_times_dt = (
+                    least_squares_target_integrand_term_3
+                    * fractional_timesteps.unsqueeze(0).unsqueeze(3)
+                )
+            else:
+                dts = self.ts[1:] - self.ts[:-1]
+                least_squares_target_integrand_term_1_times_dt = (
+                    least_squares_target_integrand_term_1
+                    * dts.unsqueeze(1).unsqueeze(2).unsqueeze(0)
+                )
+                least_squares_target_integrand_term_2_times_sqrt_dt = (
+                    least_squares_target_integrand_term_2
+                    * torch.sqrt(dts).unsqueeze(1).unsqueeze(2)
+                )
+                least_squares_target_integrand_term_3_times_dt = (
+                    least_squares_target_integrand_term_3 * dts.unsqueeze(1).unsqueeze(2)
+                )
 
             cumsum_least_squares_term_1 = torch.sum(
                 least_squares_target_integrand_term_1_times_dt, dim=1
@@ -704,6 +718,35 @@ class SOC_Solver(nn.Module):
                     (control_learned - control_target) ** 2
                     * weight.unsqueeze(0).unsqueeze(2)
                 ) / (states.shape[0] * states.shape[1])
+
+        if algorithm == "SOCM_adjoint":
+            nabla_f_evals = self.neural_sde.nabla_f(self.ts, states)
+            nabla_b_evals = self.neural_sde.nabla_b(self.ts, states)
+            nabla_g_evals = self.neural_sde.nabla_g(states[-1, :, :])
+
+            # print(f'nabla_b_evals.shape: {nabla_b_evals.shape}')
+
+            a_vectors = torch.zeros_like(states)
+            a = nabla_g_evals
+            a_vectors[-1, :, :] = a
+
+            for k in range(1,len(self.ts)):
+                # a += self.dt * (nabla_f_evals[-1-k, :, :] + torch.einsum("mkl,ml->mk", nabla_b_evals[-1-k, :, :, :], a))
+                a += self.dt * ((nabla_f_evals[-1-k, :, :] + nabla_f_evals[-k, :, :]) / 2 + torch.einsum("mkl,ml->mk", (nabla_b_evals[-1-k, :, :, :] + nabla_b_evals[-k, :, :, :]) / 2, a))
+                a_vectors[-1-k, :, :] = a
+
+            control_learned = -torch.einsum(
+                    "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
+                )
+            control_target = -torch.einsum(
+                "ij,...j->...i",
+                torch.transpose(self.sigma, 0, 1),
+                a_vectors,
+            )
+            objective = torch.sum(
+                (control_learned - control_target) ** 2
+                * weight.unsqueeze(0).unsqueeze(2)
+            ) / (states.shape[0] * states.shape[1])
 
         elif algorithm == "cross_entropy":
             learned_controls = -torch.einsum(
