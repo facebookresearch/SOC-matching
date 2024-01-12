@@ -93,3 +93,72 @@ def cubic_interp1d(x, y, mask, xs):
         + t * m0
         + p0
     )
+
+def tensor_cubic_spline(x, y, m, mask, xs):
+    """
+    Inputs:
+        x: (T, N)
+        y: (T, N, D1, D2, D3) # function values
+        m: (T, N, D1, D2, D3) # derivative values
+        mask: (T, N)
+        xs: (S, N)
+    """
+    T, N, D1, D2, D3 = y.shape
+    S = xs.shape[0]
+
+    if x.shape == xs.shape:
+        if torch.linalg.norm(x - xs) == 0:
+            return y
+
+    if mask is None:
+        mask = torch.ones_like(x).bool()
+    # mask = mask.unsqueeze(-1)
+
+    # fd = (y[1:] - y[:-1]) / (x[1:] - x[:-1] + 1e-10).unsqueeze(-1)
+    # Set tangents for the interior points.
+    # m = torch.cat([(fd[1:] + fd[:-1]) / 2, torch.zeros_like(fd[0:1])], dim=0)
+    # Set tangent for the right end point.
+    # m = torch.where(torch.cat([mask[2:], torch.zeros_like(mask[0:1])]), m, fd)
+    # Set tangent for the left end point.
+    # m = torch.cat([fd[[0]], m], dim=0)
+
+    # mask = mask.squeeze(-1)
+
+    left = torch.searchsorted(x[1:].T.contiguous(), xs.T.contiguous(), side="left").T
+    right = (left + 1) % mask.sum(0).long()
+    mask_l = F.one_hot(left, T).permute(0, 2, 1).reshape(S, T, N, 1, 1, 1)
+    mask_r = F.one_hot(right, T).permute(0, 2, 1).reshape(S, T, N, 1, 1, 1)
+
+    x = x.reshape(1, T, N, 1, 1, 1)
+    y = y.reshape(1, T, N, D1, D2, D3)
+    m = m.reshape(1, T, N, D1, D2, D3)
+    xs = xs.reshape(S, N, 1, 1, 1)
+
+    # print(f'x.shape: {x.shape}, mask_l.shape: {mask_l.shape}')
+    # print(f'(x * mask_l).shape: {(x * mask_l).shape}')
+    x0 = torch.sum(x * mask_l, dim=1)
+    x1 = torch.sum(x * mask_r, dim=1)
+    p0 = torch.sum(y * mask_l, dim=1)
+    p1 = torch.sum(y * mask_r, dim=1)
+    m0 = torch.sum(m * mask_l, dim=1)
+    m1 = torch.sum(m * mask_r, dim=1)
+
+    dx = x1 - x0
+    # print(f'dx: {dx}')
+    # print(f'xs.shape: {xs.shape}, x0.shape: {x0.shape}, dx.shape: {dx.shape}')
+    t = (xs - x0) / (dx + 1e-10)
+    # print(f't.shape: {t.shape}')
+
+    function_value = (
+        t**3 * (2 * p0 + dx * m0 - 2 * p1 + dx * m1)
+        + t**2 * (-3 * p0 + 3 * p1 - 2 * dx * m0 - dx * m1)
+        + t * dx * m0
+        + p0
+    )
+    derivative_value = (
+        3 * t**2 * (2 * p0 + dx * m0 - 2 * p1 + dx * m1)
+        + 2 * t * (-3 * p0 + 3 * p1 - 2 * dx * m0 - dx * m1)
+        + dx * m0
+    ) / (dx + 1e-10) ## should this be here?
+    # print(f'function_value.shape: {function_value.shape}')
+    return function_value, derivative_value

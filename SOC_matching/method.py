@@ -9,7 +9,7 @@ import torch.nn as nn
 import functorch
 import nvidia_smi
 
-from SOC_matching import utils, models
+from SOC_matching import utils, models, interp1d
 
 
 class NeuralSDE(torch.nn.Module):
@@ -106,15 +106,27 @@ class NeuralSDE(torch.nn.Module):
             else:
                 return self.u(t, x)
 
-    def initialize_models(self):
+    def initialize_models(self, algorithm):
         self.nabla_V = models.FullyConnectedUNet(
             dim=self.dim,
             hdims=self.hdims,
             scaling_factor=self.scaling_factor_nabla_V,
         ).to(self.device)
 
-        print(f"initialize_models, self.use_stopping_time: {self.use_stopping_time}")
-        if self.use_stopping_time:
+        print(f"initialize_models, algorithm: {algorithm}, self.use_stopping_time: {self.use_stopping_time}")
+        if algorithm == 'spline_SOCM':
+            self.gamma = torch.nn.Parameter(torch.tensor([self.gamma]).to(self.device))
+            self.gamma2 = torch.nn.Parameter(
+                torch.tensor([self.gamma2]).to(self.device)
+            )
+            self.M = models.SplineSigmoidMLP(
+                dim=self.dim,
+                hdims=self.hdims_M,
+                gamma=self.gamma,
+                gamma2=self.gamma2,
+                scaling_factor=self.scaling_factor_M,
+            ).to(self.device)
+        elif self.use_stopping_time:
             self.gamma = torch.nn.Parameter(torch.tensor([self.gamma]).to(self.device))
             self.gamma2 = torch.nn.Parameter(
                 torch.tensor([self.gamma2]).to(self.device)
@@ -154,6 +166,7 @@ class SOC_Solver(nn.Module):
         ut,
         T=1.0,
         num_steps=100,
+        num_knots=10,
         lmbd=1.0,
         d=2,
         sigma=torch.eye(2),
@@ -165,7 +178,9 @@ class SOC_Solver(nn.Module):
         self.ut = ut
         self.T = T
         self.ts = torch.linspace(0, T, num_steps + 1).to(x0.device)
+        self.knots = torch.linspace(0, T, num_knots + 1).to(x0.device)
         self.num_steps = num_steps
+        self.num_knots = num_knots
         self.dt = T / num_steps
         self.lmbd = lmbd
         self.d = d
@@ -719,19 +734,214 @@ class SOC_Solver(nn.Module):
                     * weight.unsqueeze(0).unsqueeze(2)
                 ) / (states.shape[0] * states.shape[1])
 
+        if algorithm == "spline_SOCM":
+            sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
+            # s_vector = []
+            # t_vector = []
+            EMA_states = torch.zeros_like(states).to(states.device)
+            EMA_states_decay = 0.7
+            index_tensor = torch.linspace(0, self.num_steps, self.num_steps + 1).unsqueeze(1).unsqueeze(2).to(states.device)
+            for k, t in enumerate(self.ts):
+                EMA_states[k:, :, :] += EMA_states_decay ** (index_tensor[k:, :, :] - k) * states[k, :, :]
+            EMA_states = (1 - EMA_states_decay) * EMA_states 
+            steps_per_knot = self.num_steps // self.num_knots
+            # print(f'steps_per_knot: {steps_per_knot}')
+            subsampled_indices = steps_per_knot * torch.linspace(0, self.num_knots, self.num_knots + 1).long()
+            # print(f'subsampled_indices: {subsampled_indices}')
+            subsampled_EMA_states = EMA_states[subsampled_indices, :, :]
+            # subsampled_EMA_states[1:, :, :] = subsampled_EMA_states[:-1, :, :]
+            subsampled_EMA_states = torch.roll(subsampled_EMA_states, 1, 0)
+            subsampled_EMA_states[0, :, :] = torch.zeros_like(subsampled_EMA_states[0, :, :]).to(subsampled_EMA_states.device)
+            # print(f'subsampled_EMA_states.shape: {subsampled_EMA_states.shape}')
+            joint_vector = []
+            for k, t in enumerate(self.knots):
+                s_k = torch.linspace(t, self.T, self.num_knots + 1 - k).to(self.knots.device)
+                t_k = t * torch.ones(self.num_knots + 1 - k).to(self.ts.device)
+                EMA_states_k = subsampled_EMA_states[k:, :, :]
+                # print(f's_k.shape: {s_k.shape}, t_k.shape: {t_k.shape}, EMA_states_k.shape: {EMA_states_k.shape}')
+                joint_k = torch.cat((t_k.unsqueeze(1).unsqueeze(2).repeat(1, EMA_states_k.shape[1], 1),
+                                     s_k.unsqueeze(1).unsqueeze(2).repeat(1, EMA_states_k.shape[1], 1), 
+                                     EMA_states_k), dim=2)
+                # print(f'k: {k}, joint_k.shape: {joint_k.shape}')
+                joint_vector.append(joint_k)
+                # s_vector.append(
+                #     torch.linspace(t, self.T, self.num_steps + 1 - k).to(self.knots.device)
+                # )
+                # t_vector.append(
+                #     t * torch.ones(self.num_steps + 1 - k).to(self.ts.device)
+                # )
+                # states_vector.append(
+                #     states[k:, :, :]
+                # )
+            # s_vector = torch.cat(s_vector)
+            # t_vector = torch.cat(t_vector)
+            # states_vector = torch.cat(states_vector)
+            joint_vector = torch.cat(joint_vector)
+            # joint_vector_shape = joint_vector.shape
+            # joint_vector = joint_vector.reshape(joint_vector_shape)
+            # print(f'joint_vector.shape: {joint_vector.shape}')
+            M_values, M_derivative_values = self.neural_sde.M(
+                joint_vector
+            )
+            # print(f'M_values.shape: {M_values.shape}, M_derivative_values.shape: {M_derivative_values.shape}')
+
+            # M_evals = torch.zeros(len(self.knots), len(self.knots), batch_size, d, d).to(
+            #     self.ts.device
+            # )
+            # derivative_M_evals = torch.zeros(len(self.knots), len(self.knots), batch_size, d, d).to(
+            #     self.ts.device
+            # )
+            # counter = 0
+            # for k, t in enumerate(self.knots):
+            #     M_evals[k, k:, :, :, :] = M_evals_all[
+            #         counter : (counter + self.num_knots + 1 - k), :, :, :
+            #     ]
+            #     derivative_M_evals[k, k:, :, :, :] = derivative_M_evals_all[
+            #         counter : (counter + self.num_knots + 1 - k), :, :, :
+            #     ]
+            #     counter += self.num_knots + 1 - k
+
+            M_evals_full = torch.zeros(len(self.knots), len(self.ts), batch_size, d, d).to(
+                self.ts.device
+            )
+            derivative_M_evals_full = torch.zeros(len(self.knots), len(self.ts), batch_size, d, d).to(
+                self.ts.device
+            )
+
+            cubic_spline = lambda knots, y, m, ts: interp1d.tensor_cubic_spline(knots, y, m, None, ts)
+
+            counter = 0
+            for k, t in enumerate(self.knots):
+                M_k = M_values[
+                    counter : (counter + self.num_knots + 1 - k), :, :, :
+                ]
+                derivative_M_k = M_derivative_values[
+                    counter : (counter + self.num_knots + 1 - k), :, :, :
+                ]
+                if k < len(self.knots) - 1:
+                    # print(f'M_k.shape: {M_k.shape}, derivative_M_k.shape: {derivative_M_k.shape}')
+                    M_full_k, derivative_M_full_k = cubic_spline(self.knots[k:].unsqueeze(1), 
+                                                                 M_k.unsqueeze(1), 
+                                                                 derivative_M_k.unsqueeze(1), 
+                                                                 self.ts[(k * steps_per_knot):].unsqueeze(1))
+                    M_evals_full[k, (k * steps_per_knot):, :, :, :] = M_full_k.squeeze(1)
+                    derivative_M_evals_full[k, (k * steps_per_knot):, :, :, :] = derivative_M_full_k.squeeze(1)
+                    if k > 0:
+                        M_evals_full[k, ((k - 1) * steps_per_knot):(k * steps_per_knot), :, :, :] = M_evals_full[k, k * steps_per_knot, :, :, :].unsqueeze(0).repeat(steps_per_knot, 1, 1, 1)
+                        derivative_M_evals_full[k, ((k - 1) * steps_per_knot):(k * steps_per_knot), :, :, :] = derivative_M_evals_full[k, k * steps_per_knot, :, :, :].unsqueeze(0).repeat(steps_per_knot, 1, 1, 1)
+                    # print(f'M_full_k.shape: {M_full_k.shape}, derivative_M_full_k.shape: {derivative_M_full_k.shape}')
+                    # print(f'M_evals_full[k, (k * steps_per_knot):, :, :, :].shape: {M_evals_full[k, (k * steps_per_knot):, :, :, :].shape}, derivative_M_evals_full[k, (k * steps_per_knot):, :, :, :].shape: {derivative_M_evals_full[k, (k * steps_per_knot):, :, :, :].shape}')
+                    # M_evals_full[k, (k * steps_per_knot):, :, :, :], derivative_M_evals_full[k, (k * steps_per_knot):, :, :, :] = cubic_spline(self.knots[k:].unsqueeze(1), 
+                    #                                                                                                                            M_k.unsqueeze(1), 
+                    #                                                                                                                            derivative_M_k.unsqueeze(1), 
+                    #                                                                                                                            self.ts[(k * steps_per_knot):].unsqueeze(1))
+                    # M_full_k = M_evals_full[k, (k * steps_per_knot):, :, :, :]
+                    # derivative_M_full_k = derivative_M_evals_full[k, (k * steps_per_knot):, :, :, :]
+                    # print(f'torch.mean(M_full_k): {torch.mean(M_full_k)}, torch.mean(derivative_M_full_k): {torch.mean(derivative_M_full_k)}')
+                    counter += self.num_knots + 1 - k
+                else:
+                    M_evals_full[k, (k * steps_per_knot):, :, :, :] = M_k
+                    derivative_M_evals_full[k, (k * steps_per_knot):, :, :, :] = derivative_M_k
+            # print(f'counter: {counter}')
+
+            M_evals_full_repeat = torch.repeat_interleave(M_evals_full[1:, :, :, :, :], steps_per_knot, dim=0)
+            M_evals_full_repeat = torch.cat((M_evals_full_repeat[0, :, :, :, :].unsqueeze(0), M_evals_full_repeat), dim=0)
+            print(f'M_evals_full_repeat[0, :, :, :, :].unsqueeze(0).shape: {M_evals_full_repeat[0, :, :, :, :].unsqueeze(0).shape}')
+            print(f'M_evals_full_repeat[0, 0, 0, :, :]: {M_evals_full_repeat[0, 0, 0, :, :]}')
+            derivative_M_evals_full_repeat = torch.repeat_interleave(derivative_M_evals_full[1:, :, :, :, :], steps_per_knot, dim=0)
+            derivative_M_evals_full_repeat = torch.cat((derivative_M_evals_full_repeat[0, :, :, :, :].unsqueeze(0), derivative_M_evals_full_repeat), dim=0)
+            print(f'derivative_M_evals_full_repeat[0, 0, 0, :, :]: {derivative_M_evals_full_repeat[0, 0, 0, :, :]}')
+
+            least_squares_target_integrand_term_1 = torch.einsum(
+                "ijmkl,jml->ijmk",
+                M_evals_full_repeat,
+                self.neural_sde.nabla_f(self.ts, states),
+            )[:, :-1, :, :]
+
+            M_nabla_b_term = (
+                torch.einsum(
+                    "ijmkl,jmln->ijmkn",
+                    M_evals_full_repeat,
+                    self.neural_sde.nabla_b(self.ts, states),
+                )
+                - derivative_M_evals_full_repeat
+            )
+
+            least_squares_target_integrand_term_2 = -np.sqrt(
+                self.lmbd
+            ) * torch.einsum(
+                "ijmkn,jmn->ijmk",
+                M_nabla_b_term[:, :-1, :, :, :],
+                torch.einsum("ij,abj->abi", sigma_inverse_transpose, noises),
+            )
+
+            least_squares_target_integrand_term_3 = -torch.einsum(
+                "ijmkn,jmn->ijmk",
+                M_nabla_b_term[:, :-1, :, :, :],
+                torch.einsum("ij,abj->abi", sigma_inverse_transpose, controls),
+            )
+
+            M_evals_final = M_evals_full_repeat[:, -1, :, :, :]
+            least_squares_target_terminal = torch.einsum(
+                "imkl,ml->imk",
+                M_evals_final,
+                self.neural_sde.nabla_g(states[-1, :, :]),
+            )
+
+            dts = self.ts[1:] - self.ts[:-1]
+            least_squares_target_integrand_term_1_times_dt = (
+                least_squares_target_integrand_term_1
+                * dts.unsqueeze(1).unsqueeze(2).unsqueeze(0)
+            )
+            least_squares_target_integrand_term_2_times_sqrt_dt = (
+                least_squares_target_integrand_term_2
+                * torch.sqrt(dts).unsqueeze(1).unsqueeze(2)
+            )
+            least_squares_target_integrand_term_3_times_dt = (
+                least_squares_target_integrand_term_3 * dts.unsqueeze(1).unsqueeze(2)
+            )
+
+            cumsum_least_squares_term_1 = torch.sum(
+                least_squares_target_integrand_term_1_times_dt, dim=1
+            )
+            cumsum_least_squares_term_2 = torch.sum(
+                least_squares_target_integrand_term_2_times_sqrt_dt, dim=1
+            )
+            cumsum_least_squares_term_3 = torch.sum(
+                least_squares_target_integrand_term_3_times_dt, dim=1
+            )
+
+            least_squares_target = (
+                cumsum_least_squares_term_1
+                + cumsum_least_squares_term_2
+                + cumsum_least_squares_term_3
+                + least_squares_target_terminal
+            )
+
+            control_learned = -torch.einsum(
+                "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
+            )
+            control_target = -torch.einsum(
+                "ij,...j->...i",
+                torch.transpose(self.sigma, 0, 1),
+                least_squares_target,
+            )
+
+            objective = torch.sum(
+                (control_learned - control_target) ** 2
+                * weight.unsqueeze(0).unsqueeze(2)
+            ) / (states.shape[0] * states.shape[1])
+        
         if algorithm == "SOCM_adjoint":
             nabla_f_evals = self.neural_sde.nabla_f(self.ts, states)
             nabla_b_evals = self.neural_sde.nabla_b(self.ts, states)
             nabla_g_evals = self.neural_sde.nabla_g(states[-1, :, :])
-
-            # print(f'nabla_b_evals.shape: {nabla_b_evals.shape}')
 
             a_vectors = torch.zeros_like(states)
             a = nabla_g_evals
             a_vectors[-1, :, :] = a
 
             for k in range(1,len(self.ts)):
-                # a += self.dt * (nabla_f_evals[-1-k, :, :] + torch.einsum("mkl,ml->mk", nabla_b_evals[-1-k, :, :, :], a))
                 a += self.dt * ((nabla_f_evals[-1-k, :, :] + nabla_f_evals[-k, :, :]) / 2 + torch.einsum("mkl,ml->mk", (nabla_b_evals[-1-k, :, :, :] + nabla_b_evals[-k, :, :, :]) / 2, a))
                 a_vectors[-1-k, :, :] = a
 

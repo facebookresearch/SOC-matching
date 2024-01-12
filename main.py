@@ -158,6 +158,7 @@ def main(cfg: DictConfig):
         ground_truth_control,
         T=cfg.method.T,
         num_steps=cfg.method.num_steps,
+        num_knots=cfg.method.num_knots,
         lmbd=cfg.method.lmbd,
         d=cfg.method.d,
         sigma=sigma,
@@ -315,6 +316,7 @@ def main(cfg: DictConfig):
                     or algorithm == "SOCM_exp"
                     or algorithm == "SOCM"
                     or algorithm == "SOCM_adjoint"
+                    or algorithm == "spline_SOCM"
                     or algorithm == "cross_entropy"
                 ):
                     loss = loss / normalization_const

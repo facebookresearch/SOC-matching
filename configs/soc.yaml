@@ -6,6 +6,7 @@ task: 1
 method:
   T: 1.0
   num_steps: 50
+  num_knots: 10
   lmbd: 1.0
   gamma: 0.2
   gamma2: 0.2

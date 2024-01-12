@@ -391,3 +391,97 @@ class TwoBoundarySigmoidMLP(torch.nn.Module):
 
         output = output1 + output2
         return output
+    
+class SplineSigmoidMLP(torch.nn.Module):
+    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, gamma2=3.0, scaling_factor=1.0):
+        super().__init__()
+
+        self.dim = dim
+        self.gamma = gamma
+        self.gamma2 = gamma2
+        self.sigmoid_layers = nn.Sequential(
+            nn.Linear(2 + dim, hdims[0]),
+            nn.ReLU(),
+            nn.Linear(hdims[0], hdims[1]),
+            nn.ReLU(),
+            nn.Linear(hdims[1], 2 * dim**2),
+        )
+
+        self.scaling_factor = scaling_factor
+        for m in self.sigmoid_layers:
+            if isinstance(m, nn.Linear):
+                m.weight.data *= self.scaling_factor
+                m.bias.data *= self.scaling_factor
+
+    def forward(self, joint):
+        # ts = torch.cat((t.unsqueeze(1), s.unsqueeze(1), x), dim=1)
+        sigmoid_layers_output = self.sigmoid_layers(joint) #.reshape(-1, self.dim, self.dim, 2)
+        sigmoid_layers_output_shape = sigmoid_layers_output.shape
+        # print(f'sigmoid_layers_output_shape: {sigmoid_layers_output_shape}')
+        sigmoid_layers_output = sigmoid_layers_output.reshape(sigmoid_layers_output_shape[0], 
+                                                              sigmoid_layers_output_shape[1],
+                                                              self.dim, 
+                                                              self.dim,
+                                                              2)
+        exp_factor = (
+            torch.exp(self.gamma * (joint[:, :, 1] - joint[:, :, 0]))[:, :, None, None]
+        )
+        exp_factor_2 = (
+            torch.exp(self.gamma2 * (joint[:, :, 1] - joint[:, :, 0]))[:, :, None, None]
+        )
+        identity = torch.eye(self.dim)[None,None,:,:].to(joint.device).repeat(sigmoid_layers_output_shape[0], 
+                                                                                   sigmoid_layers_output_shape[1],
+                                                                                   1, 1)
+        # print(f'exp_factor.shape: {exp_factor.shape}')
+        # print(f'exp_factor_2.shape: {exp_factor_2.shape}')
+        # print(f'identity.shape: {identity.shape}')
+        # print(f'sigmoid_layers_output.shape: {sigmoid_layers_output.shape}')
+        function_values = (1 / exp_factor) * identity + (1 - 1 / exp_factor) * sigmoid_layers_output[:, :, :, :, 0]
+        derivative_values = (
+            1 - 1 / exp_factor_2
+        ) * sigmoid_layers_output[:, :, :, :, 1]
+        return function_values, derivative_values
+
+class SquaredSplineSigmoidMLP(torch.nn.Module):
+    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, gamma2=3.0, scaling_factor=1.0):
+        super().__init__()
+
+        self.dim = dim
+        self.gamma = gamma
+        # self.gamma2 = gamma2
+        self.sigmoid_layers = nn.Sequential(
+            nn.Linear(2 + dim, hdims[0]),
+            nn.ReLU(),
+            nn.Linear(hdims[0], hdims[1]),
+            nn.ReLU(),
+            nn.Linear(hdims[1], dim**2),
+        )
+
+        self.scaling_factor = scaling_factor
+        for m in self.sigmoid_layers:
+            if isinstance(m, nn.Linear):
+                m.weight.data *= self.scaling_factor
+                m.bias.data *= self.scaling_factor
+
+    def forward(self, joint):
+        sigmoid_layers_output = self.sigmoid_layers(joint) 
+        # sigmoid_layers_output_shape = sigmoid_layers_output.shape
+        # sigmoid_layers_output = sigmoid_layers_output.reshape(sigmoid_layers_output_shape[0], 
+        #                                                       sigmoid_layers_output_shape[1],
+        #                                                       self.dim, 
+        #                                                       self.dim,
+        #                                                       2)
+        exp_factor = (
+            torch.exp(self.gamma * (joint[:, :, 1] - joint[:, :, 0])**2)[:, :, None, None]
+        )
+        # exp_factor_2 = (
+        #     torch.exp(self.gamma2 * (joint[:, :, 1] - joint[:, :, 0])**2)[:, :, None, None]
+        # )
+        identity = torch.eye(self.dim)[None,None,:,:].to(joint.device).repeat(sigmoid_layers_output.shape[0], 
+                                                                              sigmoid_layers_output.shape[1],
+                                                                              1, 1)
+        function_values = (1 / exp_factor) * identity + (1 - 1 / exp_factor) * sigmoid_layers_output[:, :, :, :, 0]
+        # derivative_values = (
+        #     1 - 1 / exp_factor_2
+        # ) * sigmoid_layers_output[:, :, :, :, 1]
+        return function_values #, derivative_values
