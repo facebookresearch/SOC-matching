@@ -229,6 +229,24 @@ def main(cfg: DictConfig):
                 lr=cfg.optim.nabla_V_lr,
                 eps=cfg.optim.adam_eps,
             )
+    elif algorithm == "spline_SOCM":
+        optimizer = torch.optim.Adam(
+                [{"params": soc_solver.neural_sde.nabla_V.parameters()}]
+                + [
+                    {
+                        "params": soc_solver.neural_sde.M.sigmoid_layers.parameters(),
+                        "lr": cfg.optim.M_lr,
+                    }
+                ]
+                + [
+                    {
+                        "params": soc_solver.neural_sde.gamma,
+                        "lr": 5 * cfg.optim.M_lr,
+                    }
+                ],
+                lr=cfg.optim.nabla_V_lr,
+                eps=cfg.optim.adam_eps,
+            )
     elif algorithm == "rel_entropy":
         optimizer = torch.optim.Adam(
             soc_solver.parameters(), lr=cfg.optim.nabla_V_lr, eps=cfg.optim.adam_eps
@@ -427,7 +445,7 @@ def main(cfg: DictConfig):
                             print(f"soc_solver.y0: {soc_solver.y0.item()}")
                         elif algorithm == "SOCM_exp":
                             print(f"soc_solver.gamma: {soc_solver.gamma.item()}")
-                        elif algorithm == "SOCM":
+                        elif algorithm == "SOCM" or algorithm == "spline_SOCM":
                             print(
                                 f"soc_solver.neural_sde.M.gamma: {soc_solver.neural_sde.M.gamma.item()}"
                             )

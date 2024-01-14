@@ -119,11 +119,17 @@ class NeuralSDE(torch.nn.Module):
             self.gamma2 = torch.nn.Parameter(
                 torch.tensor([self.gamma2]).to(self.device)
             )
-            self.M = models.SplineSigmoidMLP(
+            # self.M = models.SplineSigmoidMLP(
+            #     dim=self.dim,
+            #     hdims=self.hdims_M,
+            #     gamma=self.gamma,
+            #     gamma2=self.gamma2,
+            #     scaling_factor=self.scaling_factor_M,
+            # ).to(self.device)
+            self.M = models.SquaredSplineSigmoidMLP(
                 dim=self.dim,
                 hdims=self.hdims_M,
                 gamma=self.gamma,
-                gamma2=self.gamma2,
                 scaling_factor=self.scaling_factor_M,
             ).to(self.device)
         elif self.use_stopping_time:
@@ -736,6 +742,16 @@ class SOC_Solver(nn.Module):
 
         if algorithm == "spline_SOCM":
             sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
+
+            sum_M = lambda t, s, EMA_states: self.neural_sde.M(t, s, EMA_states).sum(dim=0).sum(dim=0)
+
+            derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
+            # derivative_M = lambda t, s, EMA_states: torch.transpose(
+            #     torch.transpose(derivative_M_0(t, s, EMA_states), 1, 2), 0, 1
+            # )
+            derivative_M = lambda t, s, EMA_states: torch.permute(
+                derivative_M_0(t, s, EMA_states).squeeze(4), (2, 3, 0, 1)
+            )
             # s_vector = []
             # t_vector = []
             EMA_states = torch.zeros_like(states).to(states.device)
@@ -780,9 +796,19 @@ class SOC_Solver(nn.Module):
             # joint_vector_shape = joint_vector.shape
             # joint_vector = joint_vector.reshape(joint_vector_shape)
             # print(f'joint_vector.shape: {joint_vector.shape}')
-            M_values, M_derivative_values = self.neural_sde.M(
-                joint_vector
+
+            # M_values, M_derivative_values = self.neural_sde.M(
+            #     joint_vector
+            # )
+            M_values = self.neural_sde.M(
+                joint_vector[:,:,0].unsqueeze(2), joint_vector[:,:,1].unsqueeze(2), joint_vector[:,:,2:]
             )
+            # print(f'joint_vector.shape: {joint_vector.shape}')
+            # jacrev_output = sum_M(joint_vector[:,:,0].unsqueeze(2), joint_vector[:,:,1].unsqueeze(2), joint_vector[:,:,2:])
+            # print(f'jacrev_output.shape: {jacrev_output.shape}')
+            M_derivative_values = derivative_M(joint_vector[:,:,0].unsqueeze(2), joint_vector[:,:,1].unsqueeze(2), joint_vector[:,:,2:]) #split joint_vector into t, s, states
+            # print(f'M_values.shape: {M_values.shape}, M_derivative_values.shape: {M_derivative_values.shape}')
+
             # print(f'M_values.shape: {M_values.shape}, M_derivative_values.shape: {M_derivative_values.shape}')
 
             # M_evals = torch.zeros(len(self.knots), len(self.knots), batch_size, d, d).to(
@@ -820,10 +846,14 @@ class SOC_Solver(nn.Module):
                 ]
                 if k < len(self.knots) - 1:
                     # print(f'M_k.shape: {M_k.shape}, derivative_M_k.shape: {derivative_M_k.shape}')
+                    # print(f'M_k.shape: {M_k.shape}, derivative_M_k.shape: {derivative_M_k.shape}')
+                    # print(f'M_k.mean(): {M_k.mean()}, derivative_M_k.shape: {derivative_M_k.mean()}')
                     M_full_k, derivative_M_full_k = cubic_spline(self.knots[k:].unsqueeze(1), 
                                                                  M_k.unsqueeze(1), 
                                                                  derivative_M_k.unsqueeze(1), 
                                                                  self.ts[(k * steps_per_knot):].unsqueeze(1))
+                    # print(f'M_full_k.shape: {M_full_k.shape}, derivative_M_full_k.shape: {derivative_M_full_k.shape}')
+                    # print(f'M_full_k.mean(): {M_full_k.mean()}, derivative_M_full_k.shape: {derivative_M_full_k.mean()}')
                     M_evals_full[k, (k * steps_per_knot):, :, :, :] = M_full_k.squeeze(1)
                     derivative_M_evals_full[k, (k * steps_per_knot):, :, :, :] = derivative_M_full_k.squeeze(1)
                     if k > 0:
@@ -846,11 +876,11 @@ class SOC_Solver(nn.Module):
 
             M_evals_full_repeat = torch.repeat_interleave(M_evals_full[1:, :, :, :, :], steps_per_knot, dim=0)
             M_evals_full_repeat = torch.cat((M_evals_full_repeat[0, :, :, :, :].unsqueeze(0), M_evals_full_repeat), dim=0)
-            print(f'M_evals_full_repeat[0, :, :, :, :].unsqueeze(0).shape: {M_evals_full_repeat[0, :, :, :, :].unsqueeze(0).shape}')
-            print(f'M_evals_full_repeat[0, 0, 0, :, :]: {M_evals_full_repeat[0, 0, 0, :, :]}')
+            # print(f'M_evals_full_repeat[0, :, :, :, :].unsqueeze(0).shape: {M_evals_full_repeat[0, :, :, :, :].unsqueeze(0).shape}')
+            # print(f'M_evals_full_repeat[0, 0, 0, :, :]: {M_evals_full_repeat[0, 0, 0, :, :]}')
             derivative_M_evals_full_repeat = torch.repeat_interleave(derivative_M_evals_full[1:, :, :, :, :], steps_per_knot, dim=0)
             derivative_M_evals_full_repeat = torch.cat((derivative_M_evals_full_repeat[0, :, :, :, :].unsqueeze(0), derivative_M_evals_full_repeat), dim=0)
-            print(f'derivative_M_evals_full_repeat[0, 0, 0, :, :]: {derivative_M_evals_full_repeat[0, 0, 0, :, :]}')
+            # print(f'derivative_M_evals_full_repeat[0, 0, 0, :, :]: {derivative_M_evals_full_repeat[0, 0, 0, :, :]}')
 
             least_squares_target_integrand_term_1 = torch.einsum(
                 "ijmkl,jml->ijmk",

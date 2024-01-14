@@ -106,9 +106,9 @@ def tensor_cubic_spline(x, y, m, mask, xs):
     T, N, D1, D2, D3 = y.shape
     S = xs.shape[0]
 
-    if x.shape == xs.shape:
-        if torch.linalg.norm(x - xs) == 0:
-            return y
+    # if x.shape == xs.shape:
+    #     if torch.linalg.norm(x - xs) == 0:
+    #         return y
 
     if mask is None:
         mask = torch.ones_like(x).bool()
@@ -126,9 +126,12 @@ def tensor_cubic_spline(x, y, m, mask, xs):
 
     left = torch.searchsorted(x[1:].T.contiguous(), xs.T.contiguous(), side="left").T
     right = (left + 1) % mask.sum(0).long()
+    # print(f'left: {left}') 
+    # print(f'right: {right}')
     mask_l = F.one_hot(left, T).permute(0, 2, 1).reshape(S, T, N, 1, 1, 1)
     mask_r = F.one_hot(right, T).permute(0, 2, 1).reshape(S, T, N, 1, 1, 1)
 
+    # print(f'm.shape: {m.shape}')
     x = x.reshape(1, T, N, 1, 1, 1)
     y = y.reshape(1, T, N, D1, D2, D3)
     m = m.reshape(1, T, N, D1, D2, D3)
