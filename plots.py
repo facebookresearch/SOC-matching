@@ -224,8 +224,8 @@ def main(cfg: DictConfig):
     else:
         legend_names = [
             "SOCM (ours)",
-            "SOCM " + r"$M_t=I$" + " (ours)",
-            "SOCM Adjoint (ours)",
+            "SOCM " + r"$M_t=I$" + " (ablation)",
+            "SOCM-Adjoint (ablation)",
             "Adjoint",
             "Cross Entropy",
             "Log-Variance",
@@ -334,7 +334,7 @@ def main(cfg: DictConfig):
             use_fixed_colors=use_fixed_colors,
         )
         plot_loss(
-            soc_solver_list,
+            soc_solver_list[:3],
             cfg,
             variable="EMA_loss",
             save_figure=True,
