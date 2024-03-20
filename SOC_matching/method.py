@@ -233,11 +233,14 @@ class SOC_Solver(nn.Module):
         u_warm_start=None,
         use_warm_start=True,
         use_stopping_time=False,
+        lmbda=None,
     ):
 
         state0 = self.x0.repeat(batch_size, 1)
         d = state0.shape[1]
         detach = algorithm != "rel_entropy"
+        if algorithm == "annealed_SOCM":
+            self.lmbda = lmbda
         (
             states,
             noises,
@@ -477,7 +480,7 @@ class SOC_Solver(nn.Module):
                 * weight.unsqueeze(0).unsqueeze(2)
             ) / (states.shape[0] * states.shape[1])
 
-        if algorithm == "SOCM":
+        if algorithm == "SOCM" or algorithm == "annealed_SOCM":
             sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
             identity = torch.eye(d).to(self.x0.device)
 
@@ -724,14 +727,11 @@ class SOC_Solver(nn.Module):
             nabla_b_evals = self.neural_sde.nabla_b(self.ts, states)
             nabla_g_evals = self.neural_sde.nabla_g(states[-1, :, :])
 
-            # print(f'nabla_b_evals.shape: {nabla_b_evals.shape}')
-
             a_vectors = torch.zeros_like(states)
             a = nabla_g_evals
             a_vectors[-1, :, :] = a
 
             for k in range(1,len(self.ts)):
-                # a += self.dt * (nabla_f_evals[-1-k, :, :] + torch.einsum("mkl,ml->mk", nabla_b_evals[-1-k, :, :, :], a))
                 a += self.dt * ((nabla_f_evals[-1-k, :, :] + nabla_f_evals[-k, :, :]) / 2 + torch.einsum("mkl,ml->mk", (nabla_b_evals[-1-k, :, :, :] + nabla_b_evals[-k, :, :, :]) / 2, a))
                 a_vectors[-1-k, :, :] = a
 
