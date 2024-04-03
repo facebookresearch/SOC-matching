@@ -220,7 +220,7 @@ def main(cfg: DictConfig):
             "Log-Variance",
             "Moment",
             "Variance",
-            "Q-SOCM",
+            "UW-SOCM",
         ]
     else:
         legend_names = [
@@ -232,7 +232,7 @@ def main(cfg: DictConfig):
             "Log-Variance",
             "Moment",
             "Variance",
-            "Q-SOCM",
+            "UW-SOCM",
         ]
 
     file_name = "last"

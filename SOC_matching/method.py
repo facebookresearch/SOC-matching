@@ -481,7 +481,7 @@ class SOC_Solver(nn.Module):
                 * weight.unsqueeze(0).unsqueeze(2)
             ) / (states.shape[0] * states.shape[1])
 
-        if algorithm == "SOCM" or algorithm == "deep_Q":
+        if algorithm == "SOCM" or algorithm == "UW_SOCM":
             sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
             identity = torch.eye(d).to(self.x0.device)
 
@@ -718,7 +718,7 @@ class SOC_Solver(nn.Module):
                     * weight.unsqueeze(0).unsqueeze(2)
                 ) / (torch.sum(stop_indicators))
             else:
-                if algorithm == "deep_Q":
+                if algorithm == "UW_SOCM":
                     objective = torch.sum(
                         (control_learned - control_target) ** 2
                     ) / (states.shape[0] * states.shape[1])

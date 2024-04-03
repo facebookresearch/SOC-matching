@@ -306,7 +306,7 @@ def get_folder_names_plots(cfg):
             "log-variance",
             "moment",
             "variance",
-            "deep_Q",
+            "UW_SOCM",
             "reinforce",
         ]
     else:
@@ -319,7 +319,7 @@ def get_folder_names_plots(cfg):
             "log-variance",
             "moment",
             "variance",
-            "deep_Q",
+            "UW_SOCM",
             "reinforce",
         ]
     for k, algorithm in enumerate(algorithms):
