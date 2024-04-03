@@ -477,7 +477,7 @@ class SOC_Solver(nn.Module):
                 * weight.unsqueeze(0).unsqueeze(2)
             ) / (states.shape[0] * states.shape[1])
 
-        if algorithm == "SOCM":
+        if algorithm == "SOCM" or algorithm == "deep_Q":
             sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
             identity = torch.eye(d).to(self.x0.device)
 
@@ -714,10 +714,15 @@ class SOC_Solver(nn.Module):
                     * weight.unsqueeze(0).unsqueeze(2)
                 ) / (torch.sum(stop_indicators))
             else:
-                objective = torch.sum(
-                    (control_learned - control_target) ** 2
-                    * weight.unsqueeze(0).unsqueeze(2)
-                ) / (states.shape[0] * states.shape[1])
+                if algorithm == "deep_Q":
+                    objective = torch.sum(
+                        (control_learned - control_target) ** 2
+                    ) / (states.shape[0] * states.shape[1])
+                else:
+                    objective = torch.sum(
+                        (control_learned - control_target) ** 2
+                        * weight.unsqueeze(0).unsqueeze(2)
+                    ) / (states.shape[0] * states.shape[1])
 
         if algorithm == "SOCM_adjoint":
             nabla_f_evals = self.neural_sde.nabla_f(self.ts, states)
@@ -783,6 +788,32 @@ class SOC_Solver(nn.Module):
             stochastic_term = torch.sum(stochastic_integrand_times_sqrt_dt, dim=0)
 
             objective = torch.mean((deterministic_term + stochastic_term) * weight)
+
+        elif algorithm == "reinforce":
+            reward = -self.lmbd * (
+                log_path_weight_deterministic + log_terminal_weight
+            ).detach()
+            control_learned = -torch.einsum(
+                "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
+            )
+            # print(f'reward.shape: {reward.shape}, control_learned.shape: {control_learned.shape}, noises.shape: {noises.shape}')
+            stochastic_term = torch.sum(control_learned[:-1,:,:] * noises, (0, 2))
+            objective = torch.mean(reward * stochastic_term)
+            weight = weight.detach()
+
+        elif algorithm == "continuous_reinforce":
+            reward = -self.lmbd * (
+                log_path_weight_deterministic + log_terminal_weight
+            ).detach()
+            control_learned = -torch.einsum(
+                "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
+            )
+            # print(f'reward.shape: {reward.shape}, control_learned.shape: {control_learned.shape}, noises.shape: {noises.shape}')
+            stochastic_term = torch.sum(control_learned[:-1,:,:] * noises, (0, 2))
+            dts = self.ts[1:] - self.ts[:-1]
+            control_term = 0.5 * torch.sum(control_learned[:-1,:,:] ** 2 * dts[:,None,None], (0, 2))
+            objective = torch.mean(reward * stochastic_term + control_term)
+            weight = weight.detach()
 
         elif (
             algorithm == "variance"
@@ -871,6 +902,29 @@ class SOC_Solver(nn.Module):
                 * weight.unsqueeze(0).unsqueeze(2)
                 / (target_control.shape[0] * target_control.shape[1])
             )
+            ### TO DEBUG ###
+            norm_sqd_learned_control = torch.sum(
+                learned_control ** 2
+                * weight.unsqueeze(0).unsqueeze(2)
+                / (target_control.shape[0] * target_control.shape[1])
+            )
+            norm_sqd_target_control = torch.sum(
+                target_control ** 2
+                * weight.unsqueeze(0).unsqueeze(2)
+                / (target_control.shape[0] * target_control.shape[1])
+            )
+            norm_sqd_learned_control_no_weight = torch.sum(
+                learned_control ** 2
+                / (target_control.shape[0] * target_control.shape[1])
+            )
+            norm_sqd_target_control_no_weight = torch.sum(
+                target_control ** 2
+                / (target_control.shape[0] * target_control.shape[1])
+            )
+            # print(f'norm_sqd_learned_control: {norm_sqd_learned_control}, norm_sqd_target_control: {norm_sqd_target_control}')
+            # print(f'norm_sqd_learned_control_no_weight: {norm_sqd_learned_control_no_weight}, norm_sqd_target_control_no_weight: {norm_sqd_target_control_no_weight}')
+            # print(f'torch.mean(weight): {torch.mean(weight)}')
+            ################
         else:
             norm_sqd_diff = None
 

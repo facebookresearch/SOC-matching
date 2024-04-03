@@ -66,7 +66,7 @@ def plot_loss(
     lss = ["-", "-.", ":", "--", "--", "-.", ":", "-", "--", "-.", ":", "-"] * 5
     cmap = mpl.cm.get_cmap("Set1")
     if use_fixed_colors:
-        colors_cmap = cmap([0, 1, 2, 3, 4, 6, 7, 8])
+        colors_cmap = cmap([0, 1, 2, 3, 4, 5, 6, 7, 8])
 
     plt.figure()
 
@@ -220,6 +220,7 @@ def main(cfg: DictConfig):
             "Log-Variance",
             "Moment",
             "Variance",
+            "Q-SOCM",
         ]
     else:
         legend_names = [
@@ -231,6 +232,7 @@ def main(cfg: DictConfig):
             "Log-Variance",
             "Moment",
             "Variance",
+            "Q-SOCM",
         ]
 
     file_name = "last"
@@ -265,8 +267,8 @@ def main(cfg: DictConfig):
 
     last_algorithm = {}
     if cfg.method.setting == "OU_quadratic_easy":
-        last_algorithm["EMA_norm_sqd_diff"] = 8
-        last_algorithm["EMA_grad_norm_sqd"] = 8
+        last_algorithm["EMA_norm_sqd_diff"] = 9
+        last_algorithm["EMA_grad_norm_sqd"] = 9
         last_algorithm["control_objective_mean"] = 7
         title = r"Quadratic Ornstein Uhlenbeck, easy ($d=20$)"
     elif cfg.method.setting == "OU_quadratic_hard" and cfg.method.use_warm_start:
@@ -275,18 +277,18 @@ def main(cfg: DictConfig):
         last_algorithm["control_objective_mean"] = 7
         title = r"Quadratic Ornstein Uhlenbeck, hard, warm start ($d=20$)"
     elif cfg.method.setting == "OU_quadratic_hard" and not cfg.method.use_warm_start:
-        last_algorithm["EMA_norm_sqd_diff"] = 8
+        last_algorithm["EMA_norm_sqd_diff"] = 9
         last_algorithm["EMA_grad_norm_sqd"] = 7
         last_algorithm["control_objective_mean"] = 7
         title = r"Quadratic Ornstein Uhlenbeck, hard, no warm start ($d=20$)"
     elif cfg.method.setting == "OU_linear":
-        last_algorithm["EMA_norm_sqd_diff"] = 8
-        last_algorithm["EMA_grad_norm_sqd"] = 8
+        last_algorithm["EMA_norm_sqd_diff"] = 9
+        last_algorithm["EMA_grad_norm_sqd"] = 9
         last_algorithm["control_objective_mean"] = 7
         title = r"Linear Ornstein Uhlenbeck ($d=10$)"
     elif cfg.method.setting == "double_well":
-        last_algorithm["EMA_norm_sqd_diff"] = 8
-        last_algorithm["EMA_grad_norm_sqd"] = 8
+        last_algorithm["EMA_norm_sqd_diff"] = 9
+        last_algorithm["EMA_grad_norm_sqd"] = 9
         last_algorithm["control_objective_mean"] = 7
         title = r"Double Well ($d=10$)"
     elif cfg.method.setting == "molecular_dynamics":

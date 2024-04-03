@@ -100,7 +100,7 @@ def main(cfg: DictConfig):
     EMA_loss = 0
     EMA_norm_sqd_diff = 0
     EMA_coeff = 0.01
-    EMA_weight_mean_coeff = 0.002
+    EMA_weight_mean_coeff = 0.1
 
     x0, sigma, optimal_sde, neural_sde, u_warm_start = define_variables(cfg, ts)
     if optimal_sde is not None:
@@ -429,6 +429,8 @@ def main(cfg: DictConfig):
                             print(
                                 f"soc_solver.neural_sde.M.gamma: {soc_solver.neural_sde.M.gamma.item()}"
                             )
+                        elif algorithm == "reinforce" or algorithm == "continuous_reinforce":
+                            print(f'normalization_const: {normalization_const}, norms_sqd_diff: {norm_sqd_diff.item()}, weight_mean: {weight_mean}')
                         if cfg.method.use_stopping_time:
                             print(
                                 f"torch.mean(stop_indicators): {torch.mean(stop_indicators)}"
