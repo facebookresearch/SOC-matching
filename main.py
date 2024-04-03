@@ -23,6 +23,7 @@ from SOC_matching.utils import (
     save_results,
     compute_EMA,
     normalization_constant,
+    stochastic_trajectories,
 )
 from SOC_matching.method import (
     SOC_Solver,
@@ -101,6 +102,7 @@ def main(cfg: DictConfig):
     EMA_norm_sqd_diff = 0
     EMA_coeff = 0.01
     EMA_weight_mean_coeff = 0.1
+    EMA_coeff_optimal = 0.03
 
     x0, sigma, optimal_sde, neural_sde, u_warm_start = define_variables(cfg, ts)
     if optimal_sde is not None:
@@ -262,9 +264,16 @@ def main(cfg: DictConfig):
         "control_objective_itr",
         "trajectories",
     ]
+    optimal_variables = [
+        "norm_sqd_diff_optimal",
+        "EMA_norm_sqd_diff_optimal",
+        "optimal_itr",
+    ]
     for var in training_variables:
         training_info[var] = []
     for var in control_objective_variables:
+        training_info[var] = []
+    for var in optimal_variables:
         training_info[var] = []
     if cfg.method.use_warm_start:
         training_info["restricted_control"] = u_warm_start
@@ -414,8 +423,65 @@ def main(cfg: DictConfig):
 
                     if itr % 10 == 0 or itr == cfg.method.num_iterations - 1:
                         if compute_L2_error:
+                            (
+                                optimal_states,
+                                _,
+                                _,
+                                _,
+                                _,
+                                _,
+                                _,
+                                _,
+                                _,
+                                _,
+                            ) = stochastic_trajectories(
+                                optimal_sde,
+                                state0,
+                                ts.to(state0),
+                                cfg.method.lmbd,
+                            )
+                            if algorithm == "rel_entropy":
+                                target_control = ground_truth_control(ts.to(state0), optimal_states, t_is_tensor=True)[
+                                    :-1, :, :
+                                ].detach()
+                            else:
+                                target_control = ground_truth_control(ts.to(state0), optimal_states, t_is_tensor=True)
+                            ts_repeat = ts.unsqueeze(1).unsqueeze(2).repeat(1, optimal_states.shape[1], 1)
+                            tx_optimal = torch.cat([ts_repeat, optimal_states], dim=-1)
+                            tx_optimal_reshape = torch.reshape(tx_optimal, (-1, tx_optimal.shape[2]))
+
+                            # Evaluate nabla_V
+                            nabla_V = neural_sde.nabla_V(tx_optimal_reshape)
+                            nabla_V = torch.reshape(nabla_V, optimal_states.shape)
+
+                            learned_control = -torch.einsum(
+                                "ij,abj->abi", torch.transpose(sigma, 0, 1), nabla_V
+                            )
+
+                            norm_sqd_diff_optimal = torch.sum(
+                                (target_control - learned_control) ** 2
+                                / (target_control.shape[0] * target_control.shape[1])
+                            ).detach()
+
+                            if itr == 0:
+                                EMA_norm_sqd_diff_optimal = norm_sqd_diff_optimal
+                            else:
+                                EMA_norm_sqd_diff_optimal = compute_EMA(
+                                                                norm_sqd_diff_optimal.detach(),
+                                                                EMA_norm_sqd_diff_optimal,
+                                                                EMA_coeff=EMA_coeff_optimal,
+                                                                itr=itr,
+                                                            )
+                                
+                            training_info["norm_sqd_diff_optimal"].append(norm_sqd_diff_optimal)
+                            training_info["EMA_norm_sqd_diff_optimal"].append(EMA_norm_sqd_diff_optimal)
+                            training_info["optimal_itr"].append(itr + 1)
+
                             print(
                                 f"{itr} - {time_per_iteration:5.3f}s/it (EMA {EMA_time_per_iteration:5.3f}s/it): {loss.item():5.5f} {EMA_loss.item():5.5f} {norm_sqd_diff.item():5.5f} {EMA_norm_sqd_diff.item():5.6f} {EMA_weight_mean.item():5.6E} {EMA_weight_std.item():5.6E}"
+                            )
+                            print(
+                                f"{norm_sqd_diff_optimal.item():5.5f} {EMA_norm_sqd_diff_optimal.item():5.5f}"
                             )
                         else:
                             print(

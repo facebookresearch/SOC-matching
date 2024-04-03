@@ -29,6 +29,8 @@ def stochastic_trajectories(
     fractional_timesteps = []
     log_path_weight_deterministic = torch.zeros(x0.shape[0]).to(x0.device)
     log_path_weight_stochastic = torch.zeros(x0.shape[0]).to(x0.device)
+    log_path_weight_deterministic_list = [log_path_weight_deterministic]
+    log_path_weight_stochastic_list = [log_path_weight_stochastic]
     log_terminal_weight = torch.zeros(x0.shape[0]).to(x0.device)
     stopping_condition = hasattr(sde, "Phi")  # If True process stops when Phi(X_t) < 0
     stop_inds = torch.ones(x0.shape[0]).to(
@@ -98,6 +100,9 @@ def stochastic_trajectories(
                 dt / lmbd
             ) * (-torch.sum(u0 * noise, dim=1))
 
+        log_path_weight_deterministic_list.append(log_path_weight_deterministic)
+        log_path_weight_stochastic_list.append(log_path_weight_stochastic)
+
     log_terminal_weight = -sde.g(x0) / lmbd
 
     if detach:
@@ -112,6 +117,8 @@ def stochastic_trajectories(
             log_path_weight_stochastic.detach(),
             log_terminal_weight.detach(),
             torch.stack(controls).detach(),
+            torch.stack(log_path_weight_deterministic_list).detach(),
+            torch.stack(log_path_weight_stochastic_list).detach(),
         )
     else:
         return (
@@ -125,6 +132,8 @@ def stochastic_trajectories(
             log_path_weight_stochastic,
             log_terminal_weight,
             torch.stack(controls),
+            torch.stack(log_path_weight_deterministic_list),
+            torch.stack(log_path_weight_stochastic_list),
         )
 
 
@@ -143,6 +152,8 @@ def control_objective(
             log_path_weight_deterministic,
             _,
             log_terminal_weight,
+            _,
+            _,
             _,
         ) = stochastic_trajectories(
             sde,
@@ -181,6 +192,8 @@ def normalization_constant(
             log_path_weight_stochastic,
             log_terminal_weight,
             controls,
+            _,
+            _,
         ) = stochastic_trajectories(
             sde,
             x0,

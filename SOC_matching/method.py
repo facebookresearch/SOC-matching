@@ -196,6 +196,8 @@ class SOC_Solver(nn.Module):
                 _,
                 log_terminal_weight,
                 _,
+                _,
+                _,
             ) = utils.stochastic_trajectories(
                 self.neural_sde,
                 state0,
@@ -247,6 +249,8 @@ class SOC_Solver(nn.Module):
             log_path_weight_stochastic,
             log_terminal_weight,
             controls,
+            log_path_weight_deterministic_tensor,
+            log_path_weight_stochastic_tensor,
         ) = utils.stochastic_trajectories(
             self.neural_sde,
             state0,
@@ -797,7 +801,8 @@ class SOC_Solver(nn.Module):
                 "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
             )
             # print(f'reward.shape: {reward.shape}, control_learned.shape: {control_learned.shape}, noises.shape: {noises.shape}')
-            stochastic_term = torch.sum(control_learned[:-1,:,:] * noises, (0, 2))
+            dts = self.ts[1:] - self.ts[:-1]
+            stochastic_term = torch.sum(control_learned[:-1,:,:] * noises * torch.sqrt(dts)[:,None,None], (0, 2))
             objective = torch.mean(reward * stochastic_term)
             weight = weight.detach()
 
@@ -809,11 +814,41 @@ class SOC_Solver(nn.Module):
                 "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
             )
             # print(f'reward.shape: {reward.shape}, control_learned.shape: {control_learned.shape}, noises.shape: {noises.shape}')
-            stochastic_term = torch.sum(control_learned[:-1,:,:] * noises, (0, 2))
             dts = self.ts[1:] - self.ts[:-1]
+            stochastic_term = torch.sum(control_learned[:-1,:,:] * noises * torch.sqrt(dts)[:,None,None], (0, 2))
             control_term = 0.5 * torch.sum(control_learned[:-1,:,:] ** 2 * dts[:,None,None], (0, 2))
             objective = torch.mean(reward * stochastic_term + control_term)
             weight = weight.detach()
+
+        # elif algorithm == "reinforce_future_rewards":
+        #     reward = -self.lmbd * (
+        #         log_path_weight_deterministic + log_terminal_weight
+        #     ).detach()
+        #     control_learned = -torch.einsum(
+        #         "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
+        #     )
+        #     # print(f'reward.shape: {reward.shape}, control_learned.shape: {control_learned.shape}, noises.shape: {noises.shape}')
+        #     dts = self.ts[1:] - self.ts[:-1]
+        #     stochastic_term = torch.sum(control_learned[:-1,:,:] * noises * torch.sqrt(dts)[:,None,None], (0, 2))
+        #     objective = torch.mean(reward * stochastic_term)
+        #     weight = weight.detach()
+
+        # elif algorithm == "continuous_reinforce_future_rewards":
+        #     reward = -self.lmbd * (
+        #         log_path_weight_deterministic_tensor[-1,:].unsqueeze(0) - log_path_weight_deterministic_tensor[:-1,:]
+        #         + log_terminal_weight.unsqueeze(0)
+        #     ).detach()
+        #     control_learned = -torch.einsum(
+        #         "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
+        #     )
+        #     # print(f'reward.shape: {reward.shape}, control_learned.shape: {control_learned.shape}, noises.shape: {noises.shape}')
+        #     dts = self.ts[1:] - self.ts[:-1]
+        #     # stochastic_term = torch.sum(control_learned[:-1,:,:] * noises * torch.sqrt(dts)[:,None,None], (0, 2))
+        #     term_1 = torch.sum(reward.unsqueeze(2) * control_learned[:-1,:,:] * noises * torch.sqrt(dts)[:,None,None], (0, 2))
+        #     control_term = 0.5 * torch.sum(control_learned[:-1,:,:] ** 2 * dts[:,None,None], (0, 2))
+        #     # objective = torch.mean(reward * stochastic_term + control_term)
+        #     objective = torch.mean(term_1 + control_term)
+        #     weight = weight.detach()
 
         elif (
             algorithm == "variance"
