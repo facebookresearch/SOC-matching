@@ -136,6 +136,51 @@ def stochastic_trajectories(
             torch.stack(log_path_weight_stochastic_list),
         )
 
+def grad_control(ts, states, sde, sigma):
+    with torch.enable_grad():
+
+        def control_eval(ts, states):
+            ts_repeat = ts.unsqueeze(1).unsqueeze(2).repeat(1, states.shape[1], 1)
+            tx = torch.cat([ts_repeat, states], dim=-1)
+            tx_reshape = torch.reshape(tx, (-1, tx.shape[2]))
+
+            # Evaluate nabla_V
+            nabla_V = sde.nabla_V(tx_reshape)
+            nabla_V = torch.reshape(nabla_V, states.shape)
+
+            control_learned = -torch.einsum(
+                "ij,...j->...i", torch.transpose(sigma, 0, 1), nabla_V
+            )
+
+            return control_learned
+
+        states = states.requires_grad_(True)
+        # output = torch.autograd.grad(self.f(t, x).sum(), states)[0]
+        output = torch.autograd.grad(torch.sum(control_eval(ts, states), dim=(0,1)), states)[0]
+        return output
+
+def grad_norm_control(ts, states, sde, sigma):
+    with torch.enable_grad():
+
+        def norm_control(ts, states):
+            ts_repeat = ts.unsqueeze(1).unsqueeze(2).repeat(1, states.shape[1], 1)
+            tx = torch.cat([ts_repeat, states], dim=-1)
+            tx_reshape = torch.reshape(tx, (-1, tx.shape[2]))
+
+            # Evaluate nabla_V
+            nabla_V = sde.nabla_V(tx_reshape)
+            nabla_V = torch.reshape(nabla_V, states.shape)
+
+            control_learned = -torch.einsum(
+                "ij,...j->...i", torch.transpose(sigma, 0, 1), nabla_V
+            )
+
+            return 0.5 * torch.sum(control_learned ** 2, dim=2)
+
+        states = states.requires_grad_(True)
+        # output = torch.autograd.grad(self.f(t, x).sum(), states)[0]
+        output = torch.autograd.grad(norm_control(ts, states).sum(), states)[0]
+        return output
 
 def control_objective(
     sde, x0, ts, lmbd, batch_size, total_n_samples=65536, verbose=False

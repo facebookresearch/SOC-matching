@@ -692,6 +692,7 @@ class SOC_Solver(nn.Module):
                 + cumsum_least_squares_term_3
                 + least_squares_target_terminal
             )
+            # print(f'cumsum_least_squares_term_1.shape: {cumsum_least_squares_term_1.shape}, cumsum_least_squares_term_2.shape: {cumsum_least_squares_term_2.shape}, cumsum_least_squares_term_3.shape: {cumsum_least_squares_term_3.shape}, least_squares_target_terminal.shape: {least_squares_target_terminal.shape}')
 
             if use_stopping_time:
                 control_learned = -unsqueezed_stop_indicators * torch.einsum(
@@ -833,22 +834,176 @@ class SOC_Solver(nn.Module):
         #     objective = torch.mean(reward * stochastic_term)
         #     weight = weight.detach()
 
-        # elif algorithm == "continuous_reinforce_future_rewards":
-        #     reward = -self.lmbd * (
-        #         log_path_weight_deterministic_tensor[-1,:].unsqueeze(0) - log_path_weight_deterministic_tensor[:-1,:]
-        #         + log_terminal_weight.unsqueeze(0)
-        #     ).detach()
-        #     control_learned = -torch.einsum(
-        #         "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
-        #     )
-        #     # print(f'reward.shape: {reward.shape}, control_learned.shape: {control_learned.shape}, noises.shape: {noises.shape}')
-        #     dts = self.ts[1:] - self.ts[:-1]
-        #     # stochastic_term = torch.sum(control_learned[:-1,:,:] * noises * torch.sqrt(dts)[:,None,None], (0, 2))
-        #     term_1 = torch.sum(reward.unsqueeze(2) * control_learned[:-1,:,:] * noises * torch.sqrt(dts)[:,None,None], (0, 2))
-        #     control_term = 0.5 * torch.sum(control_learned[:-1,:,:] ** 2 * dts[:,None,None], (0, 2))
-        #     # objective = torch.mean(reward * stochastic_term + control_term)
-        #     objective = torch.mean(term_1 + control_term)
-        #     weight = weight.detach()
+        elif algorithm == "continuous_reinforce_future_rewards":
+            reward = -self.lmbd * (
+                log_path_weight_deterministic_tensor[-1,:].unsqueeze(0) - log_path_weight_deterministic_tensor[:-1,:]
+                + log_terminal_weight.unsqueeze(0)
+            ).detach()
+            control_learned = -torch.einsum(
+                "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
+            )
+            # print(f'reward.shape: {reward.shape}, control_learned.shape: {control_learned.shape}, noises.shape: {noises.shape}')
+            dts = self.ts[1:] - self.ts[:-1]
+            # stochastic_term = torch.sum(control_learned[:-1,:,:] * noises * torch.sqrt(dts)[:,None,None], (0, 2))
+            term_1 = torch.sum(reward.unsqueeze(2) * control_learned[:-1,:,:] * noises * torch.sqrt(dts)[:,None,None], (0, 2))
+            control_term = 0.5 * torch.sum(control_learned[:-1,:,:] ** 2 * dts[:,None,None], (0, 2))
+            # objective = torch.mean(reward * stochastic_term + control_term)
+            objective = torch.mean(term_1 + control_term)
+            weight = weight.detach()
+
+        elif algorithm == "q_learning" or algorithm == "reinforce_PWRT":
+            sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
+            identity = torch.eye(d).to(self.x0.device)
+            dts = self.ts[1:] - self.ts[:-1]
+
+            sum_M = lambda t, s: self.neural_sde.M(t, s).sum(dim=0)
+
+            derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
+            derivative_M = lambda t, s: torch.transpose(
+                torch.transpose(derivative_M_0(t, s), 1, 2), 0, 1
+            )
+
+            M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
+                self.ts.device
+            )
+            derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
+                self.ts.device
+            )
+
+            s_vector = []
+            t_vector = []
+            for k, t in enumerate(self.ts):
+                s_vector.append(
+                    torch.linspace(t, self.T, self.num_steps + 1 - k).to(self.ts.device)
+                )
+                t_vector.append(
+                    t * torch.ones(self.num_steps + 1 - k).to(self.ts.device)
+                )
+                if use_stopping_time:
+                    stopping_timestep_vector.append(
+                        stopping_timestep.unsqueeze(0).repeat(self.num_steps + 1 - k, 1)
+                    )
+            s_vector = torch.cat(s_vector)
+            t_vector = torch.cat(t_vector)
+
+            M_evals_all = self.neural_sde.M(
+                t_vector,
+                s_vector,
+            )
+            derivative_M_evals_all = derivative_M(
+                t_vector,
+                s_vector,
+            )
+            counter = 0
+            for k, t in enumerate(self.ts):
+                M_evals[k, k:, :, :] = M_evals_all[
+                    counter : (counter + self.num_steps + 1 - k), :, :
+                ]
+                derivative_M_evals[k, k:, :, :] = derivative_M_evals_all[
+                    counter : (counter + self.num_steps + 1 - k), :, :
+                ]
+                counter += self.num_steps + 1 - k
+
+            nabla_norm_control = utils.grad_norm_control(self.ts, states, self.neural_sde, self.sigma)
+
+            least_squares_target_integrand_term_1 = torch.einsum(
+                "ijkl,jml->ijmk",
+                M_evals,
+                self.neural_sde.nabla_f(self.ts, states) + nabla_norm_control,
+            )[:, :-1, :, :]
+
+            least_squares_target_integrand_term_1_times_dt = (
+                least_squares_target_integrand_term_1
+                * dts.unsqueeze(1).unsqueeze(2).unsqueeze(0)
+            )
+
+            cumsum_least_squares_term_1 = torch.sum(
+                least_squares_target_integrand_term_1_times_dt, dim=1
+            )
+
+            M_evals_final = M_evals[:, -1, :, :]
+            least_squares_target_terminal = torch.einsum(
+                "ikl,ml->imk",
+                M_evals_final,
+                self.neural_sde.nabla_g(states[-1, :, :]),
+            )
+
+            def control_autograd_arg(ts, states):
+                ts_repeat = ts.unsqueeze(1).unsqueeze(2).repeat(1, states.shape[1], 1)
+                tx = torch.cat([ts_repeat, states], dim=-1)
+                tx_reshape = torch.reshape(tx, (-1, tx.shape[2]))
+
+                # Evaluate nabla_V
+                nabla_V_autograd = self.neural_sde.nabla_V(tx_reshape)
+                nabla_V_autograd = torch.reshape(nabla_V_autograd, states.shape)
+
+                learned_control = -torch.einsum(
+                    "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V_autograd
+                )
+                sigma_learned_control = torch.einsum(
+                    "ij,...j->...i", self.sigma, learned_control
+                )
+                
+                output = torch.sum((self.neural_sde.b(self.ts, states) + sigma_learned_control)[:-1,:,:] * torch.einsum("ij,abj->abi", sigma_inverse_transpose, noises), dim=2)
+                return output
+
+            nabla_control_noise = torch.autograd.grad(control_autograd_arg(self.ts, states).sum(), states)[0]
+
+            least_squares_target_integrand_term_2 = -np.sqrt(
+                self.lmbd
+            ) * torch.einsum(
+                "ijkl,jml->ijmk",
+                M_evals[:,:-1,:,:],
+                nabla_control_noise[:-1,:,:],
+            )
+
+            least_squares_target_integrand_term_3 = np.sqrt(
+                self.lmbd
+            ) * torch.einsum(
+                "ijkl,jml->ijmk",
+                derivative_M_evals[:,:-1,:,:],
+                torch.einsum("ij,abj->abi", sigma_inverse_transpose, noises)
+            )
+
+            least_squares_target_integrand_term_2_3_times_sqrt_dt = (
+                (least_squares_target_integrand_term_2
+                 + least_squares_target_integrand_term_3)
+                * torch.sqrt(dts).unsqueeze(1).unsqueeze(2)
+            )
+
+            cumsum_least_squares_term_2_3 = torch.sum(
+                least_squares_target_integrand_term_2_3_times_sqrt_dt, dim=1
+            )
+
+            reward = - np.sqrt(self.lmbd) * (
+                log_path_weight_deterministic_tensor[-1,:].unsqueeze(0) - log_path_weight_deterministic_tensor
+                + log_terminal_weight.unsqueeze(0)
+            ).detach()
+
+            reward_times_M_term = reward.unsqueeze(2) * cumsum_least_squares_term_2_3 
+
+            cum_terms = cumsum_least_squares_term_1 + least_squares_target_terminal - reward_times_M_term
+
+            control_learned = -torch.einsum(
+                "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
+            )
+            control_target = -torch.einsum(
+                "ij,...j->...i",
+                torch.transpose(self.sigma, 0, 1),
+                cum_terms,
+            )
+
+            # if algorithm == "q_learning":
+            objective = torch.sum(
+                (control_learned - control_target) ** 2
+            ) / (states.shape[0] * states.shape[1])
+
+            # elif algorithm == "reinforce_PWRT":
+            #     control_target_detach = control_target.detach().clone()
+
+            #     objective_term_1 = 0.5 * torch.sum(control_learned[:-1,:,:] ** 2 * dts[:,None,None], (0, 2))
+            #     objective_term_2 = torch.sum(control_learned * control_target_detach, (0, 2))
+            #     objective_term_3 = 
 
         elif (
             algorithm == "variance"
@@ -938,24 +1093,24 @@ class SOC_Solver(nn.Module):
                 / (target_control.shape[0] * target_control.shape[1])
             )
             ### TO DEBUG ###
-            norm_sqd_learned_control = torch.sum(
-                learned_control ** 2
-                * weight.unsqueeze(0).unsqueeze(2)
-                / (target_control.shape[0] * target_control.shape[1])
-            )
-            norm_sqd_target_control = torch.sum(
-                target_control ** 2
-                * weight.unsqueeze(0).unsqueeze(2)
-                / (target_control.shape[0] * target_control.shape[1])
-            )
-            norm_sqd_learned_control_no_weight = torch.sum(
-                learned_control ** 2
-                / (target_control.shape[0] * target_control.shape[1])
-            )
-            norm_sqd_target_control_no_weight = torch.sum(
-                target_control ** 2
-                / (target_control.shape[0] * target_control.shape[1])
-            )
+            # norm_sqd_learned_control = torch.sum(
+            #     learned_control ** 2
+            #     * weight.unsqueeze(0).unsqueeze(2)
+            #     / (target_control.shape[0] * target_control.shape[1])
+            # )
+            # norm_sqd_target_control = torch.sum(
+            #     target_control ** 2
+            #     * weight.unsqueeze(0).unsqueeze(2)
+            #     / (target_control.shape[0] * target_control.shape[1])
+            # )
+            # norm_sqd_learned_control_no_weight = torch.sum(
+            #     learned_control ** 2
+            #     / (target_control.shape[0] * target_control.shape[1])
+            # )
+            # norm_sqd_target_control_no_weight = torch.sum(
+            #     target_control ** 2
+            #     / (target_control.shape[0] * target_control.shape[1])
+            # )
             # print(f'norm_sqd_learned_control: {norm_sqd_learned_control}, norm_sqd_target_control: {norm_sqd_target_control}')
             # print(f'norm_sqd_learned_control_no_weight: {norm_sqd_learned_control_no_weight}, norm_sqd_target_control_no_weight: {norm_sqd_target_control_no_weight}')
             # print(f'torch.mean(weight): {torch.mean(weight)}')
