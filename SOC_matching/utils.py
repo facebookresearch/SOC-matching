@@ -352,20 +352,28 @@ def get_folder_names_plots(cfg):
             "moment",
             "variance",
             "UW_SOCM",
-            "reinforce",
+            "reinf",
         ]
     else:
         algorithms = [
             "SOCM",
+            "UW_SOCM",
+            "UW_SOCM_sc",
+            "UW_SOCM_sc_2B",
             "SOCM_const_M",
             "SOCM_adjoint",
+            "UW_SOCM_adjoint",
             "rel_entropy",
             "cross_entropy",
             "log-variance",
             "moment",
             "variance",
-            "UW_SOCM",
-            "reinforce",
+            "c_reinf",
+            "c_reinf_fr",
+            "q_learning",
+            "q_learning_sc",
+            "q_learning_sc_2B",
+            "reinf"
         ]
     for k, algorithm in enumerate(algorithms):
         folder_name = (

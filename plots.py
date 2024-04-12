@@ -64,11 +64,16 @@ def plot_loss(
 ):
     # linestyles and colors
     lss = ["-", "-.", ":", "--", "--", "-.", ":", "-", "--", "-.", ":", "-"] * 5
-    cmap = mpl.cm.get_cmap("Set1")
+    # cmap = mpl.cm.get_cmap("Set1")
+    cmap = mpl.cm.get_cmap("tab20")
     if use_fixed_colors:
-        colors_cmap = cmap([0, 1, 2, 3, 4, 5, 6, 7, 8])
+        colors_cmap = cmap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17])
 
     plt.figure()
+
+    alg_list = ['SOCM','UW_SOCM','UW_SOCM_sc','UW_SOCM_sc_2B','SOCM_const_M','SOCM_adjoint','UW_SOCM_adjoint',
+                'rel_entropy','cross_entropy','log-variance','moment','variance','c_reinf','c_reinf_fr',
+                'q_learning','q_learning_sc','q_learning_sc_2B','reinf']
 
     algorithms = ""
 
@@ -93,6 +98,8 @@ def plot_loss(
         first_point_control_loss = 1
     elif variable == "normalized_IW_std_dev":
         ylabel = "Importance weight std. dev. (normalized)"
+    elif variable == "EMA_norm_sqd_diff_optimal":
+        ylabel = "Control error (using optimal process)"
 
     num_plots = len(soc_solver_list)
     cmap_values = np.linspace(0, 1, num=num_plots)
@@ -143,6 +150,9 @@ def plot_loss(
                 endpoint=False,
                 dtype=int,
             )
+        elif variable == "EMA_norm_sqd_diff_optimal":
+            variable_array = torch.stack(training_info[variable]).detach().cpu().numpy()
+            iterations_array = np.array(training_info["optimal_itr"])
         else:
             variable_array = torch.stack(training_info[variable]).detach().cpu().numpy()
             iterations_array = np.linspace(
@@ -183,7 +193,8 @@ def plot_loss(
             plt.fill_between(
                 iterations_array, bar_lower, bar_upper, alpha=0.3, color=color
             )
-        algorithms = algorithms + "_" + soc_solver.algorithm
+        # algorithms = algorithms + "_" + soc_solver.algorithm
+        algorithms = algorithms + "_" + alg_list[k]
 
     plt.xlabel("Num. iterations")
     plt.ylabel(ylabel)
@@ -211,6 +222,7 @@ def main(cfg: DictConfig):
     folder_names, plots_folder_name = get_folder_names_plots(cfg)
     file_names = get_file_names_plots(folder_names, last=True)
     print(f"file_names: {file_names}")
+    file_names = file_names[:-1]
 
     if cfg.method.setting == "molecular_dynamics":
         legend_names = [
@@ -224,15 +236,24 @@ def main(cfg: DictConfig):
         ]
     else:
         legend_names = [
-            "SOCM (ours)",
-            "SOCM " + r"$M_t=I$" + " (ablation)",
-            "SOCM-Adjoint (ablation)",
+            "SOCM",
+            "Unweighted SOCM",
+            "Unweighted SOCM Scalar",
+            "Unweighted SOCM Scalar 2B",
+            "SOCM " + r"$M_t=I$",
+            "SOCM-Adjoint",
+            "Unweighted SOCM-Adjoint",
             "Adjoint",
             "Cross Entropy",
             "Log-Variance",
             "Moment",
             "Variance",
-            "UW-SOCM",
+            "REINFORCE",
+            "REINFORCE future rewards",
+            "Q learning",
+            "Q learning Scalar",
+            "Q learning Scalar 2B",
+            "REINFORCE (unadjusted)"
         ]
 
     file_name = "last"
@@ -270,26 +291,31 @@ def main(cfg: DictConfig):
         last_algorithm["EMA_norm_sqd_diff"] = 9
         last_algorithm["EMA_grad_norm_sqd"] = 9
         last_algorithm["control_objective_mean"] = 7
+        last_algorithm["EMA_norm_sqd_diff_optimal"] = 18
         title = r"Quadratic Ornstein Uhlenbeck, easy ($d=20$)"
     elif cfg.method.setting == "OU_quadratic_hard" and cfg.method.use_warm_start:
         last_algorithm["EMA_norm_sqd_diff"] = 8
         last_algorithm["EMA_grad_norm_sqd"] = 8
         last_algorithm["control_objective_mean"] = 7
+        last_algorithm["EMA_norm_sqd_diff_optimal"] = 18
         title = r"Quadratic Ornstein Uhlenbeck, hard, warm start ($d=20$)"
     elif cfg.method.setting == "OU_quadratic_hard" and not cfg.method.use_warm_start:
         last_algorithm["EMA_norm_sqd_diff"] = 9
         last_algorithm["EMA_grad_norm_sqd"] = 7
         last_algorithm["control_objective_mean"] = 7
+        last_algorithm["EMA_norm_sqd_diff_optimal"] = 18
         title = r"Quadratic Ornstein Uhlenbeck, hard, no warm start ($d=20$)"
     elif cfg.method.setting == "OU_linear":
         last_algorithm["EMA_norm_sqd_diff"] = 9
         last_algorithm["EMA_grad_norm_sqd"] = 9
         last_algorithm["control_objective_mean"] = 7
+        last_algorithm["EMA_norm_sqd_diff_optimal"] = 18
         title = r"Linear Ornstein Uhlenbeck ($d=10$)"
     elif cfg.method.setting == "double_well":
         last_algorithm["EMA_norm_sqd_diff"] = 9
         last_algorithm["EMA_grad_norm_sqd"] = 9
         last_algorithm["control_objective_mean"] = 7
+        last_algorithm["EMA_norm_sqd_diff_optimal"] = 17
         title = r"Double Well ($d=10$)"
     elif cfg.method.setting == "molecular_dynamics":
         last_algorithm["EMA_grad_norm_sqd"] = 8
@@ -375,6 +401,17 @@ def main(cfg: DictConfig):
             title=title,
             use_fixed_colors=use_fixed_colors,
         )
+        if plot_norm_sqd_diff:
+            plot_loss(
+                soc_solver_list[: last_algorithm["EMA_norm_sqd_diff_optimal"]],
+                cfg,
+                variable="EMA_norm_sqd_diff_optimal",
+                save_figure=True,
+                plots_folder_name=plots_folder_name,
+                file_name=file_name,
+                title=title,
+                use_fixed_colors=use_fixed_colors,
+            )
 
     else:
         print(f"file_name does not exist")

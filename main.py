@@ -102,7 +102,7 @@ def main(cfg: DictConfig):
     EMA_norm_sqd_diff = 0
     EMA_coeff = 0.01
     EMA_weight_mean_coeff = 0.1
-    EMA_coeff_optimal = 0.1
+    EMA_coeff_optimal = 0.02
 
     x0, sigma, optimal_sde, neural_sde, u_warm_start = define_variables(cfg, ts)
     if optimal_sde is not None:
@@ -188,7 +188,7 @@ def main(cfg: DictConfig):
             eps=cfg.optim.adam_eps,
         )
     elif algorithm == "SOCM":
-        if cfg.method.use_stopping_time:
+        if cfg.method.use_stopping_time or algorithm == 'SOCM_scalar_2B' or algorithm == 'UW_SOCM_sc_2B' or algorithm == 'q_learning_sc_2B':
             optimizer = torch.optim.Adam(
                 [{"params": soc_solver.neural_sde.nabla_V.parameters()}]
                 + [
@@ -425,7 +425,7 @@ def main(cfg: DictConfig):
                         if compute_L2_error:
                             start_optimal = time.time()
                             norm_sqd_diff_optimal = 0
-                            for _ in range(5):
+                            for _ in range(10):
                                 (
                                     optimal_states,
                                     _,
@@ -443,12 +443,12 @@ def main(cfg: DictConfig):
                                     ts.to(state0),
                                     cfg.method.lmbd,
                                 )
-                                if algorithm == "rel_entropy":
-                                    target_control = ground_truth_control(ts.to(state0), optimal_states, t_is_tensor=True)[
-                                        :-1, :, :
-                                    ].detach()
-                                else:
-                                    target_control = ground_truth_control(ts.to(state0), optimal_states, t_is_tensor=True)
+                                # if algorithm == "rel_entropy":
+                                #     target_control = ground_truth_control(ts.to(state0), optimal_states, t_is_tensor=True)[
+                                #         :-1, :, :
+                                #     ].detach()
+                                # else:
+                                target_control = ground_truth_control(ts.to(state0), optimal_states, t_is_tensor=True)
                                 ts_repeat = ts.unsqueeze(1).unsqueeze(2).repeat(1, optimal_states.shape[1], 1)
                                 tx_optimal = torch.cat([ts_repeat, optimal_states], dim=-1)
                                 tx_optimal_reshape = torch.reshape(tx_optimal, (-1, tx_optimal.shape[2]))
@@ -461,11 +461,12 @@ def main(cfg: DictConfig):
                                     "ij,abj->abi", torch.transpose(sigma, 0, 1), nabla_V
                                 )
 
+                                # print(f'target_control.shape: {target_control.shape}, learned_control.shape: {learned_control.shape}')
                                 norm_sqd_diff_optimal += torch.sum(
                                     (target_control - learned_control) ** 2
                                     / (target_control.shape[0] * target_control.shape[1])
                                 ).detach()
-                            norm_sqd_diff_optimal /= 3
+                            norm_sqd_diff_optimal /= 10
                             end_optimal = time.time()
                             time_optimal = end_optimal - start_optimal
 
@@ -501,7 +502,7 @@ def main(cfg: DictConfig):
                             print(
                                 f"soc_solver.neural_sde.M.gamma: {soc_solver.neural_sde.M.gamma.item()}"
                             )
-                        elif algorithm == "reinforce" or algorithm == "continuous_reinforce":
+                        elif algorithm == "reinf" or algorithm == "c_reinf":
                             print(f'normalization_const: {normalization_const}, norms_sqd_diff: {norm_sqd_diff.item()}, weight_mean: {weight_mean}')
                         if cfg.method.use_stopping_time:
                             print(

@@ -273,6 +273,142 @@ class SigmoidMLP(torch.nn.Module):
             1 - 1 / exp_factor
         ) * sigmoid_layers_output
         return output
+    
+class ScalarSigmoidMLP(torch.nn.Module):
+    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, scaling_factor=1.0):
+        super().__init__()
+
+        self.dim = dim
+        self.gamma = gamma
+        self.sigmoid_layers = nn.Sequential(
+            nn.Linear(2, hdims[0]),
+            nn.ReLU(),
+            nn.Linear(hdims[0], hdims[1]),
+            nn.ReLU(),
+            nn.Linear(hdims[1], 1),
+        )
+
+        self.scaling_factor = scaling_factor
+        for m in self.sigmoid_layers:
+            if isinstance(m, nn.Linear):
+                m.weight.data *= self.scaling_factor
+                m.bias.data *= self.scaling_factor
+
+    def forward(self, t, s):
+        ts = torch.cat((t.unsqueeze(1), s.unsqueeze(1)), dim=1)
+        # sigmoid_layers_output = self.sigmoid_layers(ts).reshape(-1, self.dim, self.dim)
+        sigmoid_layers_output = self.sigmoid_layers(ts).unsqueeze(2)
+        exp_factor = (
+            torch.exp(self.gamma * (ts[:, 1] - ts[:, 0])).unsqueeze(1).unsqueeze(2)
+        )
+        identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)
+        # print(f'exp_factor.shape: {exp_factor.shape}, sigmoid_layers_output.shape: {sigmoid_layers_output.shape}')
+        output = ( (1 / exp_factor) + (1 - 1 / exp_factor) * sigmoid_layers_output ) * identity.repeat(ts.shape[0], 1, 1)
+        return output
+    
+class DiagonalSigmoidMLP(torch.nn.Module):
+    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, scaling_factor=1.0):
+        super().__init__()
+
+        self.dim = dim
+        self.gamma = gamma
+        self.sigmoid_layers = nn.Sequential(
+            nn.Linear(2, hdims[0]),
+            nn.ReLU(),
+            nn.Linear(hdims[0], hdims[1]),
+            nn.ReLU(),
+            nn.Linear(hdims[1], dim),
+        )
+
+        self.scaling_factor = scaling_factor
+        for m in self.sigmoid_layers:
+            if isinstance(m, nn.Linear):
+                m.weight.data *= self.scaling_factor
+                m.bias.data *= self.scaling_factor
+
+    def forward(self, t, s):
+        ts = torch.cat((t.unsqueeze(1), s.unsqueeze(1)), dim=1)
+        sigmoid_layers_output = torch.diag_embed(self.sigmoid_layers(ts)) #.unsqueeze(2)
+        exp_factor = (
+            torch.exp(self.gamma * (ts[:, 1] - ts[:, 0])).unsqueeze(1).unsqueeze(2)
+        )
+        identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)
+        output = (1 / exp_factor) * identity.repeat(ts.shape[0], 1, 1) + (
+            1 - 1 / exp_factor
+        ) * sigmoid_layers_output
+        return output
+    
+class TwoBoundaryScalarSigmoidMLP(torch.nn.Module):
+    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, gamma2=3.0, gamma3=10.0, scaling_factor=1.0):
+        super().__init__()
+
+        self.dim = dim
+        self.gamma = gamma
+        self.gamma2 = gamma2
+        self.gamma3 = gamma3
+        self.sigmoid_layers = nn.Sequential(
+            nn.Linear(2, hdims[0]),
+            nn.ReLU(),
+            nn.Linear(hdims[0], hdims[1]),
+            nn.ReLU(),
+            nn.Linear(hdims[1], 1),
+        )
+
+        self.scaling_factor = scaling_factor
+        for m in self.sigmoid_layers:
+            if isinstance(m, nn.Linear):
+                m.weight.data *= self.scaling_factor
+                m.bias.data *= self.scaling_factor
+
+    def forward(self, t, s):
+        ts = torch.cat((t.unsqueeze(1), s.unsqueeze(1)), dim=1)
+        sigmoid_layers_output = self.sigmoid_layers(ts).unsqueeze(2)
+
+        exp_denominator = 1 / (1 - ts[:, 0])
+        exp_denominator[-1] = 1.0
+        factor1 = torch.exp(- self.gamma3 * (ts[:, 1] - ts[:, 0]) / exp_denominator)
+
+        factor2 = (1 - torch.exp(-self.gamma * (ts[:, 1] - ts[:, 0]))) * (torch.exp(-self.gamma2 * (ts[:, 1] - ts[:, 0])) - torch.exp(-self.gamma2 * (1 - ts[:, 0])))
+        identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)
+
+        output = (factor1[:,None,None] + sigmoid_layers_output * factor2[:,None,None]) * identity.repeat(ts.shape[0], 1, 1)
+        return output
+    
+class TwoBoundaryDiagonalSigmoidMLP(torch.nn.Module):
+    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, gamma2=3.0, gamma3=10.0, scaling_factor=1.0):
+        super().__init__()
+
+        self.dim = dim
+        self.gamma = gamma
+        self.gamma2 = gamma2
+        self.gamma3 = gamma3
+        self.sigmoid_layers = nn.Sequential(
+            nn.Linear(2, hdims[0]),
+            nn.ReLU(),
+            nn.Linear(hdims[0], hdims[1]),
+            nn.ReLU(),
+            nn.Linear(hdims[1], 1),
+        )
+
+        self.scaling_factor = scaling_factor
+        for m in self.sigmoid_layers:
+            if isinstance(m, nn.Linear):
+                m.weight.data *= self.scaling_factor
+                m.bias.data *= self.scaling_factor
+
+    def forward(self, t, s):
+        ts = torch.cat((t.unsqueeze(1), s.unsqueeze(1)), dim=1)
+        sigmoid_layers_output = torch.diag_embed(self.sigmoid_layers(ts))
+
+        exp_denominator = 1 / (1 - ts[:, 0])
+        exp_denominator[-1] = 1.0
+        factor1 = torch.exp(- self.gamma3 * (ts[:, 1] - ts[:, 0]) / exp_denominator)
+
+        factor2 = (1 - torch.exp(-self.gamma * (ts[:, 1] - ts[:, 0]))) * (torch.exp(-self.gamma2 * (ts[:, 1] - ts[:, 0])) - torch.exp(-self.gamma2 * (1 - ts[:, 0])))
+        identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)
+
+        output = factor1[:,None,None] * identity.repeat(ts.shape[0], 1, 1) + sigmoid_layers_output * factor2[:,None,None]
+        return output
 
 
 class TwoBoundarySigmoidMLP(torch.nn.Module):

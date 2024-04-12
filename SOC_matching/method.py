@@ -106,7 +106,7 @@ class NeuralSDE(torch.nn.Module):
             else:
                 return self.u(t, x)
 
-    def initialize_models(self):
+    def initialize_models(self, algorithm):
         self.nabla_V = models.FullyConnectedUNet(
             dim=self.dim,
             hdims=self.hdims,
@@ -132,12 +132,49 @@ class NeuralSDE(torch.nn.Module):
             ).to(self.device)
         else:
             self.gamma = torch.nn.Parameter(torch.tensor([self.gamma]).to(self.device))
-            self.M = models.SigmoidMLP(
-                dim=self.dim,
-                hdims=self.hdims_M,
-                gamma=self.gamma,
-                scaling_factor=self.scaling_factor_M,
-            ).to(self.device)
+            if algorithm == 'SOCM_sc' or algorithm == 'UW_SOCM_sc' or algorithm == 'q_learning_sc':
+                self.M = models.ScalarSigmoidMLP(
+                    dim=self.dim,
+                    hdims=self.hdims_M,
+                    gamma=self.gamma,
+                    scaling_factor=self.scaling_factor_M,
+                ).to(self.device)
+            if algorithm == 'SOCM_diag' or algorithm == 'UW_SOCM_diag' or algorithm == 'q_learning_diag':
+                self.M = models.DiagonalSigmoidMLP(
+                    dim=self.dim,
+                    hdims=self.hdims_M,
+                    gamma=self.gamma,
+                    scaling_factor=self.scaling_factor_M,
+                ).to(self.device)
+            elif algorithm == 'SOCM_sc_2B' or algorithm == 'UW_SOCM_sc_2B' or algorithm == 'q_learning_sc_2B':
+                self.gamma2 = torch.nn.Parameter(
+                    torch.tensor([self.gamma2]).to(self.device)
+                )
+                self.M = models.TwoBoundaryScalarSigmoidMLP(
+                    dim=self.dim,
+                    hdims=self.hdims_M,
+                    gamma=self.gamma,
+                    gamma2=self.gamma2,
+                    scaling_factor=self.scaling_factor_M,
+                ).to(self.device)
+            elif algorithm == 'SOCM_diag_2B' or algorithm == 'UW_SOCM_diag_2B' or algorithm == 'q_learning_diag_2B':
+                self.gamma2 = torch.nn.Parameter(
+                    torch.tensor([self.gamma2]).to(self.device)
+                )
+                self.M = models.TwoBoundaryDiagonalSigmoidMLP(
+                    dim=self.dim,
+                    hdims=self.hdims_M,
+                    gamma=self.gamma,
+                    gamma2=self.gamma2,
+                    scaling_factor=self.scaling_factor_M,
+                ).to(self.device)
+            else:
+                self.M = models.SigmoidMLP(
+                    dim=self.dim,
+                    hdims=self.hdims_M,
+                    gamma=self.gamma,
+                    scaling_factor=self.scaling_factor_M,
+                ).to(self.device)
 
         # Use learned control in the stochastic_trajectories function
         self.use_learned_control = True
@@ -481,7 +518,9 @@ class SOC_Solver(nn.Module):
                 * weight.unsqueeze(0).unsqueeze(2)
             ) / (states.shape[0] * states.shape[1])
 
-        if algorithm == "SOCM" or algorithm == "UW_SOCM":
+        if algorithm in ["SOCM", "UW_SOCM", 
+                         "SOCM_sc", "UW_SOCM_sc", "SOCM_sc_2B", "UW_SOCM_sc_2B",
+                         "SOCM_diag", "UW_SOCM_diag", "SOCM_diag_2B", "UW_SOCM_diag_2B"]:
             sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
             identity = torch.eye(d).to(self.x0.device)
 
@@ -719,17 +758,21 @@ class SOC_Solver(nn.Module):
                     * weight.unsqueeze(0).unsqueeze(2)
                 ) / (torch.sum(stop_indicators))
             else:
-                if algorithm == "UW_SOCM":
+                if algorithm in ["UW_SOCM", "UW_SOCM_sc", "UW_SOCM_sc_2B", "UW_SOCM_diag", "UW_SOCM_diag_2B"]:
                     objective = torch.sum(
                         (control_learned - control_target) ** 2
                     ) / (states.shape[0] * states.shape[1])
+                    # objective_by_time = torch.sum(
+                    #     (control_learned - control_target) ** 2, dim=(1,2)
+                    # ) / (states.shape[0] * states.shape[1])
+                    # print(f'objective_by_time: {objective_by_time}')
                 else:
                     objective = torch.sum(
                         (control_learned - control_target) ** 2
                         * weight.unsqueeze(0).unsqueeze(2)
                     ) / (states.shape[0] * states.shape[1])
 
-        if algorithm == "SOCM_adjoint":
+        if algorithm == "SOCM_adjoint" or algorithm == "UW_SOCM_adjoint":
             nabla_f_evals = self.neural_sde.nabla_f(self.ts, states)
             nabla_b_evals = self.neural_sde.nabla_b(self.ts, states)
             nabla_g_evals = self.neural_sde.nabla_g(states[-1, :, :])
@@ -753,10 +796,15 @@ class SOC_Solver(nn.Module):
                 torch.transpose(self.sigma, 0, 1),
                 a_vectors,
             )
-            objective = torch.sum(
-                (control_learned - control_target) ** 2
-                * weight.unsqueeze(0).unsqueeze(2)
-            ) / (states.shape[0] * states.shape[1])
+            if algorithm == "SOCM_adjoint":
+                objective = torch.sum(
+                    (control_learned - control_target) ** 2
+                    * weight.unsqueeze(0).unsqueeze(2)
+                ) / (states.shape[0] * states.shape[1])
+            else:
+                objective = torch.sum(
+                    (control_learned - control_target) ** 2
+                ) / (states.shape[0] * states.shape[1])
 
         elif algorithm == "cross_entropy":
             learned_controls = -torch.einsum(
@@ -794,7 +842,7 @@ class SOC_Solver(nn.Module):
 
             objective = torch.mean((deterministic_term + stochastic_term) * weight)
 
-        elif algorithm == "reinforce":
+        elif algorithm == "reinf":
             reward = -self.lmbd * (
                 log_path_weight_deterministic + log_terminal_weight
             ).detach()
@@ -807,7 +855,7 @@ class SOC_Solver(nn.Module):
             objective = torch.mean(reward * stochastic_term)
             weight = weight.detach()
 
-        elif algorithm == "continuous_reinforce":
+        elif algorithm == "c_reinf":
             reward = -self.lmbd * (
                 log_path_weight_deterministic + log_terminal_weight
             ).detach()
@@ -821,7 +869,7 @@ class SOC_Solver(nn.Module):
             objective = torch.mean(reward * stochastic_term + control_term)
             weight = weight.detach()
 
-        # elif algorithm == "reinforce_future_rewards":
+        # elif algorithm == "reinf_fr":
         #     reward = -self.lmbd * (
         #         log_path_weight_deterministic + log_terminal_weight
         #     ).detach()
@@ -834,7 +882,7 @@ class SOC_Solver(nn.Module):
         #     objective = torch.mean(reward * stochastic_term)
         #     weight = weight.detach()
 
-        elif algorithm == "continuous_reinforce_future_rewards":
+        elif algorithm == "c_reinf_fr":
             reward = -self.lmbd * (
                 log_path_weight_deterministic_tensor[-1,:].unsqueeze(0) - log_path_weight_deterministic_tensor[:-1,:]
                 + log_terminal_weight.unsqueeze(0)
@@ -851,7 +899,7 @@ class SOC_Solver(nn.Module):
             objective = torch.mean(term_1 + control_term)
             weight = weight.detach()
 
-        elif algorithm == "q_learning" or algorithm == "reinforce_PWRT":
+        elif algorithm in ["q_learning","q_learning_sc","q_learning_sc_2B","q_learning_diag","q_learning_diag_2B"]: # or algorithm == "reinf_PWRT":
             sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
             identity = torch.eye(d).to(self.x0.device)
             dts = self.ts[1:] - self.ts[:-1]
@@ -998,7 +1046,7 @@ class SOC_Solver(nn.Module):
                 (control_learned - control_target) ** 2
             ) / (states.shape[0] * states.shape[1])
 
-            # elif algorithm == "reinforce_PWRT":
+            # elif algorithm == "reinf_PWRT":
             #     control_target_detach = control_target.detach().clone()
 
             #     objective_term_1 = 0.5 * torch.sum(control_learned[:-1,:,:] ** 2 * dts[:,None,None], (0, 2))
