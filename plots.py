@@ -51,6 +51,7 @@ def compute_normalized_importance_weight_std_dev(training_info):
 
 def plot_loss(
     soc_solver_list,
+    alg_numbers,
     cfg,
     variable="norm_sqd_diff",
     save_figure=False,
@@ -64,16 +65,17 @@ def plot_loss(
 ):
     # linestyles and colors
     lss = ["-", "-.", ":", "--", "--", "-.", ":", "-", "--", "-.", ":", "-"] * 5
+    cmap = mpl.cm.get_cmap("Set1") if cfg.method.plot_number == 5 else mpl.cm.get_cmap("tab20")
     # cmap = mpl.cm.get_cmap("Set1")
-    cmap = mpl.cm.get_cmap("tab20")
+    # cmap = mpl.cm.get_cmap("tab20")
     if use_fixed_colors:
-        colors_cmap = cmap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17])
+        colors_cmap = cmap([0, 1, 2, 3, 4, 6, 7, 8]) if cfg.method.plot_number == 5 else cmap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17])
 
     plt.figure()
 
-    alg_list = ['SOCM','UW_SOCM','UW_SOCM_sc','UW_SOCM_sc_2B','SOCM_const_M','SOCM_adjoint','UW_SOCM_adjoint',
-                'rel_entropy','cross_entropy','log-variance','moment','variance','c_reinf','c_reinf_fr',
-                'q_learning','q_learning_sc','q_learning_sc_2B','reinf']
+    # alg_list = ['SOCM','UW_SOCM','UW_SOCM_sc','UW_SOCM_sc_2B','SOCM_const_M','SOCM_adjoint','UW_SOCM_adjoint',
+    #             'rel_entropy','cross_entropy','log-variance','moment','variance','c_reinf','c_reinf_fr',
+    #             'q_learning','q_learning_sc','q_learning_sc_2B','reinf']
 
     algorithms = ""
 
@@ -99,17 +101,18 @@ def plot_loss(
     elif variable == "normalized_IW_std_dev":
         ylabel = "Importance weight std. dev. (normalized)"
     elif variable == "EMA_norm_sqd_diff_optimal":
-        ylabel = "Control error (using optimal process)"
+        ylabel = "Control " + r"$L^2$" + " error (EMA)"
 
     num_plots = len(soc_solver_list)
     cmap_values = np.linspace(0, 1, num=num_plots)
+    alg_numbers = torch.arange(len(soc_solver_list)) if cfg.method.plot_number == 5 else alg_numbers
     for k, soc_solver in enumerate(soc_solver_list):
         algorithm = soc_solver.algorithm
         training_info = soc_solver.training_info
         if use_fixed_colors:
-            color = colors_cmap[k]
+            color = colors_cmap[alg_numbers[k]]
         else:
-            color = cmap(cmap_values[k])
+            color = cmap(cmap_values[alg_numbers[k]])
 
         print(
             f"variable: {variable}, algorithm: {algorithm}, plots_folder_name: {plots_folder_name}"
@@ -172,7 +175,7 @@ def plot_loss(
                 variable_array,
                 label=soc_solver.legend_name,
                 color=color,
-                linestyle=lss[k],
+                linestyle=lss[alg_numbers[k]],
             )
         else:
             plt.semilogy(
@@ -180,7 +183,7 @@ def plot_loss(
                 variable_array,
                 label=soc_solver.legend_name,
                 color=color,
-                linestyle=lss[k],
+                linestyle=lss[alg_numbers[k]],
             )
         if variable == "control_objective_mean":
             std_err_array = (
@@ -193,8 +196,8 @@ def plot_loss(
             plt.fill_between(
                 iterations_array, bar_lower, bar_upper, alpha=0.3, color=color
             )
-        # algorithms = algorithms + "_" + soc_solver.algorithm
-        algorithms = algorithms + "_" + alg_list[k]
+        algorithms = algorithms + "_" + soc_solver.algorithm
+        # algorithms = algorithms + "_" + alg_list[k]
 
     plt.xlabel("Num. iterations")
     plt.ylabel(ylabel)
@@ -219,10 +222,10 @@ def plot_loss(
 def main(cfg: DictConfig):
     print(cfg)
 
-    folder_names, plots_folder_name = get_folder_names_plots(cfg)
+    folder_names, plots_folder_name, alg_names = get_folder_names_plots(cfg)
     file_names = get_file_names_plots(folder_names, last=True)
     print(f"file_names: {file_names}")
-    file_names = file_names[:-1]
+    # file_names = file_names
 
     if cfg.method.setting == "molecular_dynamics":
         legend_names = [
@@ -236,12 +239,12 @@ def main(cfg: DictConfig):
         ]
     else:
         legend_names = [
-            "SOCM",
+            "SOCM (ours)",
             "Unweighted SOCM",
-            "Unweighted SOCM Scalar",
-            "Unweighted SOCM Scalar 2B",
-            "SOCM " + r"$M_t=I$",
-            "SOCM-Adjoint",
+            "Unweighted SOCM Diagonal",
+            "Unweighted SOCM Diagonal 2B",
+            "SOCM " + r"$M_t=I$ (ablation)",
+            "SOCM-Adjoint (ablation)",
             "Unweighted SOCM-Adjoint",
             "Adjoint",
             "Cross Entropy",
@@ -251,10 +254,99 @@ def main(cfg: DictConfig):
             "REINFORCE",
             "REINFORCE future rewards",
             "Q learning",
-            "Q learning Scalar",
+            "Q learning Diagonal",
             "Q learning Scalar 2B",
             "REINFORCE (unadjusted)"
         ]
+
+    # plot_number = 3
+    if cfg.method.plot_number == 0:
+        # To show all algorithms, but UW_SOCM_diag_2B, SOCM_const_M
+        alg_list = [
+            "SOCM",
+            "UW_SOCM",
+            "UW_SOCM_diag",
+            "SOCM_adjoint",
+            "UW_SOCM_adjoint",
+            "rel_entropy",
+            "cross_entropy",
+            "log-variance",
+            "moment",
+            "variance",
+            "c_reinf",
+            "c_reinf_fr",
+            "q_learning",
+            "q_learning_diag",
+            "q_learning_diag_2B",
+            "reinf"
+        ]
+    elif cfg.method.plot_number == 1:
+        # To show all algorithms but UW_SOCM_diag_2B, SOCM_const_M, REINFORCE (unadjusted)
+        alg_list = [
+            "SOCM",
+            "UW_SOCM",
+            "UW_SOCM_diag",
+            "SOCM_adjoint",
+            "UW_SOCM_adjoint",
+            "rel_entropy",
+            "cross_entropy",
+            "log-variance",
+            "moment",
+            "variance",
+            "c_reinf",
+            "c_reinf_fr",
+            "q_learning",
+            "q_learning_diag",
+            "q_learning_diag_2B",
+            "reinf"
+        ]
+    elif cfg.method.plot_number == 2:
+        # To show all scalable algorithms, no REINFORCE (unadjusted)
+        alg_list = [
+            "UW_SOCM",
+            "UW_SOCM_diag",
+            "UW_SOCM_diag_2B",
+            "UW_SOCM_adjoint",
+            "rel_entropy",
+            "log-variance",
+            "moment",
+            "c_reinf",
+            "c_reinf_fr",
+            "q_learning",
+            "q_learning_diag",
+            "q_learning_diag_2B",
+            "reinf"
+        ]
+    elif cfg.method.plot_number == 3:
+        #To show all UW_SOCM algorithms
+        alg_list = [
+            "UW_SOCM",
+            "UW_SOCM_diag",
+            "UW_SOCM_diag_2B",
+            "UW_SOCM_adjoint",
+        ]
+    elif cfg.method.plot_number == 4:
+        #To show all REINFORCE-like algorithms
+        alg_list = [
+            "c_reinf",
+            "c_reinf_fr",
+            "q_learning",
+            "q_learning_diag",
+            "q_learning_diag_2B",
+        ]
+    elif cfg.method.plot_number == 5:
+        #To show all algorithms in the SOCM paper
+        alg_list = [
+            "SOCM",
+            "SOCM_const_M",
+            "SOCM_adjoint",
+            "rel_entropy",
+            "cross_entropy",
+            "log-variance",
+            "moment",
+            "variance",
+        ]
+
 
     file_name = "last"
     set_ylims = False
@@ -273,11 +365,12 @@ def main(cfg: DictConfig):
     print(f"os.getcwd(): {os.getcwd()}")
 
     soc_solver_list = []
+    alg_numbers = []
     for k, file_name in enumerate(file_names):
         print(f"file_name: {file_name}")
         print(f"os.path.exists(file_name): {os.path.exists(file_name)}")
 
-        if os.path.exists(file_name):
+        if os.path.exists(file_name) and alg_names[k] in alg_list:
             print(f"file_name exists")
             with open(file_name, "rb") as f:
                 soc_solver = pickle.load(f)
@@ -285,6 +378,7 @@ def main(cfg: DictConfig):
                 compute_SNR(soc_solver.training_info)
                 compute_normalized_importance_weight_std_dev(soc_solver.training_info)
                 soc_solver_list.append(soc_solver)
+                alg_numbers.append(k)
 
     last_algorithm = {}
     if cfg.method.setting == "OU_quadratic_easy":
@@ -337,6 +431,7 @@ def main(cfg: DictConfig):
         if plot_norm_sqd_diff:
             plot_loss(
                 soc_solver_list[: last_algorithm["EMA_norm_sqd_diff"]],
+                alg_numbers[: last_algorithm["EMA_norm_sqd_diff"]],
                 cfg,
                 variable="EMA_norm_sqd_diff",
                 save_figure=True,
@@ -350,6 +445,7 @@ def main(cfg: DictConfig):
             )
         plot_loss(
             soc_solver_list[: last_algorithm["EMA_grad_norm_sqd"]],
+            alg_numbers[: last_algorithm["EMA_grad_norm_sqd"]],
             cfg,
             variable="EMA_grad_norm_sqd",
             save_figure=True,
@@ -363,6 +459,7 @@ def main(cfg: DictConfig):
         )
         plot_loss(
             soc_solver_list[:3],
+            alg_numbers[:3],
             cfg,
             variable="EMA_loss",
             save_figure=True,
@@ -373,6 +470,7 @@ def main(cfg: DictConfig):
         )
         plot_loss(
             soc_solver_list[: last_algorithm["control_objective_mean"]],
+            alg_numbers[: last_algorithm["control_objective_mean"]],
             cfg,
             variable="control_objective_mean",
             save_figure=True,
@@ -383,6 +481,7 @@ def main(cfg: DictConfig):
         )
         plot_loss(
             soc_solver_list,
+            alg_numbers,
             cfg,
             variable="EMA_SNR",
             save_figure=True,
@@ -393,6 +492,7 @@ def main(cfg: DictConfig):
         )
         plot_loss(
             soc_solver_list,
+            alg_numbers,
             cfg,
             variable="normalized_IW_std_dev",
             save_figure=True,
@@ -404,6 +504,7 @@ def main(cfg: DictConfig):
         if plot_norm_sqd_diff:
             plot_loss(
                 soc_solver_list[: last_algorithm["EMA_norm_sqd_diff_optimal"]],
+                alg_numbers[: last_algorithm["EMA_norm_sqd_diff_optimal"]],
                 cfg,
                 variable="EMA_norm_sqd_diff_optimal",
                 save_figure=True,

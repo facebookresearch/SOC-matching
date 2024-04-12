@@ -682,6 +682,10 @@ class SOC_Solver(nn.Module):
                 )
             else:
                 M_evals_final = M_evals[:, -1, :, :]
+                # print(f'M_evals_final.shape: {M_evals_final.shape}')
+                # print(f'M_evals_final: {M_evals_final[25,:,:]}')
+                # print(f'torch.mean(M_evals): {torch.mean(M_evals)}')
+                # print(f'torch.mean(M_evals_final): {torch.mean(M_evals_final)}, torch.mean(M_evals_final**2): {torch.mean(M_evals_final**2)}')
                 least_squares_target_terminal = torch.einsum(
                     "ikl,ml->imk",
                     M_evals_final,

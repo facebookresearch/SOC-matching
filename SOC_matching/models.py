@@ -400,9 +400,13 @@ class TwoBoundaryDiagonalSigmoidMLP(torch.nn.Module):
         ts = torch.cat((t.unsqueeze(1), s.unsqueeze(1)), dim=1)
         sigmoid_layers_output = torch.diag_embed(self.sigmoid_layers(ts))
 
-        exp_denominator = 1 / (1 - ts[:, 0])
-        exp_denominator[-1] = 1.0
-        factor1 = torch.exp(- self.gamma3 * (ts[:, 1] - ts[:, 0]) / exp_denominator)
+        # exp_denominator = 1 / (1 - ts[:, 0])
+        # exp_denominator[-1] = 1.0
+        # factor1 = torch.exp(- self.gamma3 * (ts[:, 1] - ts[:, 0]) / exp_denominator)
+        factor1 = 1 - (ts[:, 1] - ts[:, 0]) / (1 - ts[:, 0])
+        factor1[-1] = 0.0
+        # print(f'factor1[-50:]: {factor1[-50:]}')
+        # print(f'ts[-50:, 0]: {ts[-50:, 0]}, ts[-50:, 1]: {ts[-50:, 1]}')
 
         factor2 = (1 - torch.exp(-self.gamma * (ts[:, 1] - ts[:, 0]))) * (torch.exp(-self.gamma2 * (ts[:, 1] - ts[:, 0])) - torch.exp(-self.gamma2 * (1 - ts[:, 0])))
         identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)

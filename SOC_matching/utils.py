@@ -358,8 +358,8 @@ def get_folder_names_plots(cfg):
         algorithms = [
             "SOCM",
             "UW_SOCM",
-            "UW_SOCM_sc",
-            "UW_SOCM_sc_2B",
+            "UW_SOCM_diag",
+            "UW_SOCM_diag_2B",
             "SOCM_const_M",
             "SOCM_adjoint",
             "UW_SOCM_adjoint",
@@ -371,8 +371,8 @@ def get_folder_names_plots(cfg):
             "c_reinf",
             "c_reinf_fr",
             "q_learning",
-            "q_learning_sc",
-            "q_learning_sc_2B",
+            "q_learning_diag",
+            "q_learning_diag_2B",
             "reinf"
         ]
     for k, algorithm in enumerate(algorithms):
@@ -421,7 +421,7 @@ def get_folder_names_plots(cfg):
         + "_"
         + str(cfg.optim.nabla_V_lr)
     )
-    return folder_names, plots_folder_name
+    return folder_names, plots_folder_name, algorithms
 
 
 def get_file_name(folder_name, num_iterations=0, last=False):
