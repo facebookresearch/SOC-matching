@@ -28,8 +28,10 @@ def stochastic_trajectories(
     stop_indicators = [torch.ones(x0.shape[0]).to(x0.device)]
     fractional_timesteps = []
     log_path_weight_deterministic = torch.zeros(x0.shape[0]).to(x0.device)
+    log_path_weight_f = torch.zeros(x0.shape[0]).to(x0.device)
     log_path_weight_stochastic = torch.zeros(x0.shape[0]).to(x0.device)
     log_path_weight_deterministic_list = [log_path_weight_deterministic]
+    log_path_weight_f_list = [log_path_weight_f]
     log_path_weight_stochastic_list = [log_path_weight_stochastic]
     log_terminal_weight = torch.zeros(x0.shape[0]).to(x0.device)
     stopping_condition = hasattr(sde, "Phi")  # If True process stops when Phi(X_t) < 0
@@ -88,6 +90,12 @@ def stochastic_trajectories(
                 / lmbd
                 * (-sde.f(t0, x0) - 0.5 * torch.sum(u0**2, dim=1))
             )
+            log_path_weight_f = (
+                log_path_weight_f
+                + fractional_timestep
+                / lmbd
+                * (-sde.f(t0, x0))
+            )
             log_path_weight_stochastic = log_path_weight_stochastic + torch.sqrt(
                 fractional_timestep / lmbd
             ) * (-torch.sum(u0 * noise, dim=1))
@@ -96,11 +104,16 @@ def stochastic_trajectories(
                 log_path_weight_deterministic
                 + dt / lmbd * (-sde.f(t0, x0) - 0.5 * torch.sum(u0**2, dim=1))
             )
+            log_path_weight_f = (
+                log_path_weight_f
+                + dt / lmbd * (-sde.f(t0, x0))
+            )
             log_path_weight_stochastic = log_path_weight_stochastic + torch.sqrt(
                 dt / lmbd
             ) * (-torch.sum(u0 * noise, dim=1))
 
         log_path_weight_deterministic_list.append(log_path_weight_deterministic)
+        log_path_weight_f_list.append(log_path_weight_f)
         log_path_weight_stochastic_list.append(log_path_weight_stochastic)
 
     log_terminal_weight = -sde.g(x0) / lmbd
@@ -118,6 +131,7 @@ def stochastic_trajectories(
             log_terminal_weight.detach(),
             torch.stack(controls).detach(),
             torch.stack(log_path_weight_deterministic_list).detach(),
+            torch.stack(log_path_weight_f_list).detach(),
             torch.stack(log_path_weight_stochastic_list).detach(),
         )
     else:
@@ -133,6 +147,7 @@ def stochastic_trajectories(
             log_terminal_weight,
             torch.stack(controls),
             torch.stack(log_path_weight_deterministic_list),
+            torch.stack(log_path_weight_f_list),
             torch.stack(log_path_weight_stochastic_list),
         )
 
@@ -200,6 +215,7 @@ def control_objective(
             _,
             _,
             _,
+            _,
         ) = stochastic_trajectories(
             sde,
             state0,
@@ -237,6 +253,7 @@ def normalization_constant(
             log_path_weight_stochastic,
             log_terminal_weight,
             controls,
+            _,
             _,
             _,
         ) = stochastic_trajectories(
@@ -346,13 +363,13 @@ def get_folder_names_plots(cfg):
     if cfg.method.setting == "molecular_dynamics":
         algorithms = [
             "SOCM",
-            "rel_entropy",
+            "discrete_adjoint",
             "cross_entropy",
             "log-variance",
             "moment",
             "variance",
             "UW_SOCM",
-            "reinf",
+            "reinf_unadj",
         ]
     else:
         algorithms = [
@@ -362,18 +379,21 @@ def get_folder_names_plots(cfg):
             "UW_SOCM_diag_2B",
             "SOCM_const_M",
             "SOCM_adjoint",
-            "UW_SOCM_adjoint",
-            "rel_entropy",
+            "continuous_adjoint",
+            "discrete_adjoint",
             "cross_entropy",
             "log-variance",
             "moment",
             "variance",
-            "c_reinf",
-            "c_reinf_fr",
-            "q_learning",
-            "q_learning_diag",
-            "q_learning_diag_2B",
-            "reinf"
+            "reinf",
+            "reinf_fr",
+            "SOCM_cost",
+            "SOCM_cost_diag",
+            "SOCM_cost_diag_2B",
+            "reinf_unadj",
+            "SOCM_work",
+            "SOCM_work_diag",
+            "SOCM_work_diag_2B",
         ]
     for k, algorithm in enumerate(algorithms):
         folder_name = (

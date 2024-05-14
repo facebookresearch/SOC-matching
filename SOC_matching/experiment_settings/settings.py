@@ -26,6 +26,7 @@ def ground_truth_control(cfg, ts, x0, **kwargs):
     if (
         cfg.method.setting == "OU_quadratic_easy"
         or cfg.method.setting == "OU_quadratic_hard"
+        or cfg.method.setting == "OU_quadratic_no_state_cost"
     ):
         R_inverse = torch.matmul(
             kwargs["sigma"], torch.transpose(kwargs["sigma"], 0, 1)
@@ -144,6 +145,7 @@ def define_neural_sde(cfg, ts, x0, u_warm_start, **kwargs):
     if (
         cfg.method.setting == "OU_quadratic_easy"
         or cfg.method.setting == "OU_quadratic_hard"
+        or cfg.method.setting == "OU_quadratic_no_state_cost"
     ):
         neural_sde = OU_Quadratic(
             device=cfg.method.device,
@@ -211,6 +213,7 @@ def define_variables(cfg, ts):
     if (
         cfg.method.setting == "OU_quadratic_easy"
         or cfg.method.setting == "OU_quadratic_hard"
+        or cfg.method.setting == "OU_quadratic_no_state_cost"
     ):
         if cfg.method.d == 2:
             x0 = torch.tensor([0.4, 0.6]).to(cfg.method.device)
@@ -226,6 +229,10 @@ def define_variables(cfg, ts):
             A = 0.2 * torch.eye(cfg.method.d).to(cfg.method.device)
             P = 0.2 * torch.eye(cfg.method.d).to(cfg.method.device)
             Q = 0.1 * torch.eye(cfg.method.d).to(cfg.method.device)
+        elif cfg.method.setting == "OU_quadratic_no_state_cost":
+            A = 0.5 * torch.eye(cfg.method.d).to(cfg.method.device)
+            P = 0.0 * torch.eye(cfg.method.d).to(cfg.method.device)
+            Q = 0.25 * torch.eye(cfg.method.d).to(cfg.method.device)
 
         optimal_sde = ground_truth_control(cfg, ts, x0, sigma=sigma, A=A, P=P, Q=Q)
         u_warm_start = set_warm_start(cfg, optimal_sde, x0, sigma)

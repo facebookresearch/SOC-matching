@@ -61,3 +61,4 @@ hydra:
     nodes: 1
     partition: learnlab
     exclude: learnfair[5025-5028,5041-5316,7456-7735]
+    # constraint: volta32gb

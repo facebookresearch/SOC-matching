@@ -274,6 +274,24 @@ class SigmoidMLP(torch.nn.Module):
         ) * sigmoid_layers_output
         return output
     
+class Identity(torch.nn.Module):
+    def __init__(self, dim=10):
+        super().__init__()
+
+        self.dim = dim
+
+    def forward(self, t, s):
+        ts = torch.cat((t.unsqueeze(1), s.unsqueeze(1)), dim=1)
+        # sigmoid_layers_output = self.sigmoid_layers(ts).reshape(-1, self.dim, self.dim)
+        # exp_factor = (
+        #     torch.exp(self.gamma * (ts[:, 1] - ts[:, 0])).unsqueeze(1).unsqueeze(2)
+        # )
+        identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)
+        # output = (1 / exp_factor) * identity.repeat(ts.shape[0], 1, 1) + (
+        #     1 - 1 / exp_factor
+        # ) * sigmoid_layers_output
+        return identity.repeat(ts.shape[0], 1, 1)
+    
 class ScalarSigmoidMLP(torch.nn.Module):
     def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, scaling_factor=1.0):
         super().__init__()

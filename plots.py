@@ -65,17 +65,39 @@ def plot_loss(
 ):
     # linestyles and colors
     lss = ["-", "-.", ":", "--", "--", "-.", ":", "-", "--", "-.", ":", "-"] * 5
-    cmap = mpl.cm.get_cmap("Set1") if cfg.method.plot_number == 5 else mpl.cm.get_cmap("tab20")
+    cmap = mpl.cm.get_cmap("Set1") if cfg.method.plot_number in [5, 8] else mpl.cm.get_cmap("tab20")
     # cmap = mpl.cm.get_cmap("Set1")
     # cmap = mpl.cm.get_cmap("tab20")
     if use_fixed_colors:
-        colors_cmap = cmap([0, 1, 2, 3, 4, 6, 7, 8]) if cfg.method.plot_number == 5 else cmap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17])
+        if cfg.method.plot_number == 5:
+            colors_cmap = cmap([0, 1, 2, 3, 4, 6, 7, 8])
+        elif cfg.method.plot_number == 0:
+            colors_cmap = cmap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18])
+        elif cfg.method.plot_number == 1:
+            colors_cmap = cmap([0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18])
+        elif cfg.method.plot_number == 2:
+            colors_cmap = cmap([1, 2, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17])
+        elif cfg.method.plot_number == 3:
+            # colors_cmap = cmap([1, 2, 3, 4])
+            colors_cmap = cmap([1, 2])
+        elif cfg.method.plot_number == 4:
+            colors_cmap = cmap([5, 6, 11, 12, 13, 14, 15, 16, 17, 18])
+        elif cfg.method.plot_number == 6:
+            colors_cmap = cmap([3, 4])
+        elif cfg.method.plot_number == 7:
+            colors_cmap = cmap([8])
+        elif cfg.method.plot_number == 8:
+            colors_cmap = cmap([0, 1, 2, 3, 4, 6, 7])
+        elif cfg.method.plot_number == 9:
+            colors_cmap = cmap([0, 1, 4, 5, 6, 7, 8, 9, 10, 11, 12, 15, 16])
+        else:
+            colors_cmap = cmap([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17])
 
     plt.figure()
 
-    # alg_list = ['SOCM','UW_SOCM','UW_SOCM_sc','UW_SOCM_sc_2B','SOCM_const_M','SOCM_adjoint','UW_SOCM_adjoint',
-    #             'rel_entropy','cross_entropy','log-variance','moment','variance','c_reinf','c_reinf_fr',
-    #             'q_learning','q_learning_sc','q_learning_sc_2B','reinf']
+    # alg_list = ['SOCM','UW_SOCM','UW_SOCM_sc','UW_SOCM_sc_2B','SOCM_const_M','SOCM_adjoint','continuous_adjoint',
+    #             'discrete_adjoint','cross_entropy','log-variance','moment','variance','reinf','reinf_fr',
+    #             'SOCM_cost','SOCM_cost_sc','SOCM_cost_sc_2B','reinf']
 
     algorithms = ""
 
@@ -105,12 +127,15 @@ def plot_loss(
 
     num_plots = len(soc_solver_list)
     cmap_values = np.linspace(0, 1, num=num_plots)
-    alg_numbers = torch.arange(len(soc_solver_list)) if cfg.method.plot_number == 5 else alg_numbers
+    alg_numbers = torch.arange(len(soc_solver_list)) if cfg.method.plot_number in [5,8] else alg_numbers
     for k, soc_solver in enumerate(soc_solver_list):
         algorithm = soc_solver.algorithm
         training_info = soc_solver.training_info
         if use_fixed_colors:
-            color = colors_cmap[alg_numbers[k]]
+            if cfg.method.plot_number in [5,8]:
+                color = colors_cmap[alg_numbers[k]]
+            else:
+                color = colors_cmap[k]
         else:
             color = cmap(cmap_values[alg_numbers[k]])
 
@@ -168,7 +193,9 @@ def plot_loss(
         print(
             f"variable_array.shape: {variable_array.shape}, iterations_array.shape: {iterations_array.shape}"
         )
-        print(f"np.mean(variable_array): {np.mean(variable_array)}")
+        # print(f"np.mean(variable_array): {np.mean(variable_array)}")
+        # print(f'variable_array[:20]: {variable_array[:20]}')
+        # print(f'variable_array[-20:]: {variable_array[-20:]}')
         if variable == "control_objective_mean":
             plt.plot(
                 iterations_array,
@@ -238,47 +265,76 @@ def main(cfg: DictConfig):
             "UW-SOCM",
         ]
     else:
+        # legend_names = [
+        #     "SOCM",
+        #     "Unweighted SOCM",
+        #     "Unweighted SOCM Diagonal",
+        #     "Unweighted SOCM Diagonal 2B",
+        #     "SOCM " + r"$M_t=I$",
+        #     "SOCM-Adjoint",
+        #     "Unweighted SOCM-Adjoint",
+        #     "Adjoint",
+        #     "Cross Entropy",
+        #     "Log-Variance",
+        #     "Moment",
+        #     "Variance",
+        #     "REINFORCE",
+        #     "REINFORCE future rewards",
+        #     "SOCM-Cost",
+        #     "SOCM-Cost Diag.",
+        #     "SOCM-Cost Diag. Non-diff.",
+        #     "REINFORCE (unadjusted)",
+        #     "SOCM-Work",
+        #     "SOCM-Work Diag.",
+        #     "SOCM-Work Diag. Non-diff.",
+        # ]
         legend_names = [
-            "SOCM (ours)",
-            "Unweighted SOCM",
-            "Unweighted SOCM Diagonal",
-            "Unweighted SOCM Diagonal 2B",
-            "SOCM " + r"$M_t=I$ (ablation)",
-            "SOCM-Adjoint (ablation)",
-            "Unweighted SOCM-Adjoint",
-            "Adjoint",
+            "SOCM",
+            "UW-SOCM",
+            "UW-SOCM Diag.",
+            "UW-SOCM Diag. " + r"$M_t(T)=0$",
+            "SOCM " + r"$M_t=I$",
+            "SOCM-Adj",
+            "Cont. Adjoint",
+            "Disc. Adjoint",
             "Cross Entropy",
             "Log-Variance",
             "Moment",
             "Variance",
             "REINFORCE",
-            "REINFORCE future rewards",
-            "Q learning",
-            "Q learning Diagonal",
-            "Q learning Scalar 2B",
-            "REINFORCE (unadjusted)"
+            "REINFORCE-FR",
+            "SOCM-Cost",
+            "SOCM-Cost Diag.",
+            "SOCM-Cost Diag. " + r"$M_t(T)=0$",
+            "REINFORCE (unadjusted)",
+            "SOCM-Work",
+            "SOCM-Work Diag.",
+            "SOCM-Work Diag. " + r"$M_t(T)=0$",
         ]
 
     # plot_number = 3
     if cfg.method.plot_number == 0:
-        # To show all algorithms, but UW_SOCM_diag_2B, SOCM_const_M
+        # To show all algorithms, but UW_SOCM_diag_2B, REINFORCE (unadjusted)
         alg_list = [
             "SOCM",
             "UW_SOCM",
             "UW_SOCM_diag",
+            "SOCM_const_M",
             "SOCM_adjoint",
-            "UW_SOCM_adjoint",
-            "rel_entropy",
+            "continuous_adjoint",
+            "discrete_adjoint",
             "cross_entropy",
             "log-variance",
             "moment",
             "variance",
-            "c_reinf",
-            "c_reinf_fr",
-            "q_learning",
-            "q_learning_diag",
-            "q_learning_diag_2B",
-            "reinf"
+            "reinf",
+            "reinf_fr",
+            "SOCM_cost",
+            "SOCM_cost_diag",
+            "SOCM_cost_diag_2B",
+            "SOCM_work",
+            "SOCM_work_diag",
+            "SOCM_work_diag_2B",
         ]
     elif cfg.method.plot_number == 1:
         # To show all algorithms but UW_SOCM_diag_2B, SOCM_const_M, REINFORCE (unadjusted)
@@ -287,52 +343,72 @@ def main(cfg: DictConfig):
             "UW_SOCM",
             "UW_SOCM_diag",
             "SOCM_adjoint",
-            "UW_SOCM_adjoint",
-            "rel_entropy",
+            "continuous_adjoint",
+            "discrete_adjoint",
             "cross_entropy",
             "log-variance",
             "moment",
             "variance",
-            "c_reinf",
-            "c_reinf_fr",
-            "q_learning",
-            "q_learning_diag",
-            "q_learning_diag_2B",
-            "reinf"
+            "reinf",
+            "reinf_fr",
+            "SOCM_cost",
+            "SOCM_cost_diag",
+            "SOCM_cost_diag_2B",
+            "SOCM_work",
+            "SOCM_work_diag",
+            "SOCM_work_diag_2B",
         ]
     elif cfg.method.plot_number == 2:
         # To show all scalable algorithms, no REINFORCE (unadjusted)
+        # alg_list = [
+        #     "UW_SOCM",
+        #     "UW_SOCM_diag",
+        #     "continuous_adjoint",
+        #     "discrete_adjoint",
+        #     "log-variance",
+        #     "moment",
+        #     "reinf",
+        #     "reinf_fr",
+        #     "SOCM_cost",
+        #     "SOCM_cost_diag",
+        #     "SOCM_cost_diag_2B",
+        #     "SOCM_work",
+        #     "SOCM_work_diag",
+        #     "SOCM_work_diag_2B",
+        # ]
         alg_list = [
             "UW_SOCM",
-            "UW_SOCM_diag",
-            "UW_SOCM_diag_2B",
-            "UW_SOCM_adjoint",
-            "rel_entropy",
+            "continuous_adjoint",
+            "discrete_adjoint",
+            "cross_entropy",
             "log-variance",
             "moment",
-            "c_reinf",
-            "c_reinf_fr",
-            "q_learning",
-            "q_learning_diag",
-            "q_learning_diag_2B",
-            "reinf"
+            "reinf",
+            "reinf_fr",
+            "SOCM_cost",
+            "SOCM_work",
         ]
     elif cfg.method.plot_number == 3:
         #To show all UW_SOCM algorithms
         alg_list = [
             "UW_SOCM",
             "UW_SOCM_diag",
-            "UW_SOCM_diag_2B",
-            "UW_SOCM_adjoint",
+            # "UW_SOCM_diag_2B",
+            # "continuous_adjoint",
         ]
     elif cfg.method.plot_number == 4:
         #To show all REINFORCE-like algorithms
         alg_list = [
-            "c_reinf",
-            "c_reinf_fr",
-            "q_learning",
-            "q_learning_diag",
-            "q_learning_diag_2B",
+            "continuous_adjoint",
+            "discrete_adjoint",
+            "reinf",
+            "reinf_fr",
+            "SOCM_cost",
+            "SOCM_cost_diag",
+            "SOCM_cost_diag_2B",
+            "SOCM_work",
+            "SOCM_work_diag",
+            "SOCM_work_diag_2B",
         ]
     elif cfg.method.plot_number == 5:
         #To show all algorithms in the SOCM paper
@@ -340,11 +416,49 @@ def main(cfg: DictConfig):
             "SOCM",
             "SOCM_const_M",
             "SOCM_adjoint",
-            "rel_entropy",
+            "discrete_adjoint",
             "cross_entropy",
             "log-variance",
             "moment",
             "variance",
+        ]
+    elif cfg.method.plot_number == 6:
+        #To show algorithms that don't work: UW_SOCM_diag_2B, REINFORCE (unadjusted)
+        alg_list = [
+            "UW_SOCM_diag_2B",
+            "reinf_unadj",
+        ]
+    elif cfg.method.plot_number == 7:
+        alg_list = [
+            "variance",
+        ]
+    elif cfg.method.plot_number == 8:
+        #To show all algorithms in the SOCM paper
+        alg_list = [
+            "SOCM",
+            "SOCM_const_M",
+            "SOCM_adjoint",
+            "discrete_adjoint",
+            "cross_entropy",
+            "log-variance",
+            "moment",
+        ]
+    elif cfg.method.plot_number == 9:
+        # To show all algorithms but UW_SOCM_diag_2B, SOCM_const_M, REINFORCE (unadjusted)
+        alg_list = [
+            "SOCM",
+            "UW_SOCM",
+            "SOCM_adjoint",
+            "continuous_adjoint",
+            "discrete_adjoint",
+            "cross_entropy",
+            "log-variance",
+            "moment",
+            "variance",
+            "reinf",
+            "reinf_fr",
+            "SOCM_cost",
+            "SOCM_work",
         ]
 
 
