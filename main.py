@@ -235,6 +235,7 @@ def main(cfg: DictConfig):
             soc_solver.parameters(), lr=cfg.optim.nabla_V_lr, eps=cfg.optim.adam_eps
         )
     else:
+        print(f'Optimizer over soc_solver.parameters()')
         optimizer = torch.optim.Adam(
             soc_solver.parameters(), lr=cfg.optim.nabla_V_lr, eps=cfg.optim.adam_eps
         )
@@ -404,22 +405,23 @@ def main(cfg: DictConfig):
                                 itr=itr,
                             )
 
-                    training_info["time_per_iteration"].append(time_per_iteration)
-                    training_info["EMA_time_per_iteration"].append(
-                        EMA_time_per_iteration
-                    )
-                    training_info["loss"].append(loss.detach())
-                    training_info["EMA_loss"].append(EMA_loss)
-                    training_info["weight_mean"].append(weight_mean.detach())
-                    training_info["EMA_weight_mean"].append(EMA_weight_mean)
-                    training_info["weight_std"].append(weight_std.detach())
-                    training_info["EMA_weight_std"].append(EMA_weight_std)
-                    training_info["grad_norm_sqd"].append(grad_norm_sqd.detach())
-                    training_info["EMA_grad_norm_sqd"].append(EMA_grad_norm_sqd)
-                    training_info["sqd_norm_EMA_grad"].append(sqd_norm_EMA_grad)
-                    if compute_L2_error:
-                        training_info["norm_sqd_diff"].append(norm_sqd_diff.detach())
-                        training_info["EMA_norm_sqd_diff"].append(EMA_norm_sqd_diff)
+                    if itr % cfg.method.save_every == 0:
+                        training_info["time_per_iteration"].append(time_per_iteration)
+                        training_info["EMA_time_per_iteration"].append(
+                            EMA_time_per_iteration
+                        )
+                        training_info["loss"].append(loss.detach())
+                        training_info["EMA_loss"].append(EMA_loss)
+                        training_info["weight_mean"].append(weight_mean.detach())
+                        training_info["EMA_weight_mean"].append(EMA_weight_mean)
+                        training_info["weight_std"].append(weight_std.detach())
+                        training_info["EMA_weight_std"].append(EMA_weight_std)
+                        training_info["grad_norm_sqd"].append(grad_norm_sqd.detach())
+                        training_info["EMA_grad_norm_sqd"].append(EMA_grad_norm_sqd)
+                        training_info["sqd_norm_EMA_grad"].append(sqd_norm_EMA_grad)
+                        if compute_L2_error:
+                            training_info["norm_sqd_diff"].append(norm_sqd_diff.detach())
+                            training_info["EMA_norm_sqd_diff"].append(EMA_norm_sqd_diff)
 
                     if itr % 10 == 0 or itr == cfg.method.num_iterations - 1:
                         if compute_L2_error:

@@ -4,6 +4,7 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory.
 import torch
+import math
 
 from SOC_matching.utils import (
     optimal_control_LQ,
@@ -20,6 +21,7 @@ from SOC_matching.experiment_settings.OU_quadratic import OU_Quadratic
 from SOC_matching.experiment_settings.OU_linear import OU_Linear
 from SOC_matching.experiment_settings.double_well import DoubleWell
 from SOC_matching.experiment_settings.molecular_dynamics import MolecularDynamics
+from SOC_matching.experiment_settings.sampling import Sampler
 
 
 def ground_truth_control(cfg, ts, x0, **kwargs):
@@ -113,6 +115,10 @@ def ground_truth_control(cfg, ts, x0, **kwargs):
     elif cfg.method.setting == "molecular_dynamics":
         optimal_sde = None
         return optimal_sde
+    
+    elif cfg.method.setting in ["sampling_cox", "sampling_funnel", "sampling_MG"]:
+        optimal_sde = None
+        return optimal_sde
 
 
 def set_warm_start(cfg, sde, x0, sigma):
@@ -204,6 +210,19 @@ def define_neural_sde(cfg, ts, x0, u_warm_start, **kwargs):
             scaling_factor_nabla_V=cfg.method.scaling_factor_nabla_V,
             scaling_factor_M=cfg.method.scaling_factor_M,
             use_stopping_time=cfg.method.use_stopping_time,
+        )
+    elif cfg.method.setting in ["sampling_cox", "sampling_funnel", "sampling_MG"]:
+        neural_sde = Sampler(
+            device=cfg.method.device,
+            dim=cfg.method.d,
+            hdims=cfg.arch.hdims,
+            hdims_M=cfg.arch.hdims_M,
+            setting=cfg.method.setting,
+            lmbd=cfg.method.lmbd,
+            sigma=kwargs["sigma"],
+            gamma=cfg.method.gamma,
+            scaling_factor_nabla_V=cfg.method.scaling_factor_nabla_V,
+            scaling_factor_M=cfg.method.scaling_factor_M,
         )
     neural_sde.initialize_models(cfg.method.algorithm)
     return neural_sde
@@ -376,4 +395,27 @@ def define_variables(cfg, ts):
             f_coeff=f_coeff,
         )
 
+        return x0, sigma, optimal_sde, neural_sde, u_warm_start
+    
+    elif cfg.method.setting in ["sampling_cox", "sampling_funnel", "sampling_MG"]:
+        print(cfg.method.setting)
+        ### Add batch_size as an argument
+        x0 = torch.randn(cfg.optim.batch_size, cfg.method.d).to(cfg.method.device)
+
+        sigma = math.sqrt(2) * torch.eye(cfg.method.d).to(cfg.method.device)
+
+        optimal_sde = ground_truth_control(
+            cfg,
+            ts,
+            x0,
+            sigma=sigma,
+        )
+        u_warm_start = set_warm_start(cfg, optimal_sde, x0, sigma)
+        neural_sde = define_neural_sde(
+            cfg,
+            ts,
+            x0,
+            u_warm_start,
+            sigma=sigma,
+        )
         return x0, sigma, optimal_sde, neural_sde, u_warm_start

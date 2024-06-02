@@ -30,6 +30,7 @@ method:
   num_splines: 1
   use_stopping_time: False
   plot_number: 1
+  save_every: 1
 
 arch:
   hdims: [256, 128, 64] 

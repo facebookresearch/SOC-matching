@@ -168,7 +168,7 @@ class NeuralSDE(torch.nn.Module):
                     gamma2=self.gamma2,
                     scaling_factor=self.scaling_factor_M,
                 ).to(self.device)
-            elif algorithm in ['SOCM_cost_identity','SOCM_work_identity','SOCM_cost_identity_2B','SOCM_work_identity_2B']:
+            elif algorithm in ['SOCM_cost_identity','SOCM_work_identity','SOCM_cost_identity_2B','SOCM_work_identity_2B','UW_SOCM_identity']:
                 self.M = models.Identity(
                     dim=self.dim,
                 ).to(self.device)
@@ -278,8 +278,10 @@ class SOC_Solver(nn.Module):
         use_warm_start=True,
         use_stopping_time=False,
     ):
-
-        state0 = self.x0.repeat(batch_size, 1)
+        if len(self.x0.shape) == 1:
+            state0 = self.x0.repeat(batch_size, 1)
+        elif len(self.x0.shape) == 2:
+            state0 = self.x0
         d = state0.shape[1]
         detach = algorithm != "discrete_adjoint"
         (
@@ -526,7 +528,7 @@ class SOC_Solver(nn.Module):
 
         if algorithm in ["SOCM", "UW_SOCM", 
                          "SOCM_sc", "UW_SOCM_sc", "SOCM_sc_2B", "UW_SOCM_sc_2B",
-                         "SOCM_diag", "UW_SOCM_diag", "SOCM_diag_2B", "UW_SOCM_diag_2B"]:
+                         "SOCM_diag", "UW_SOCM_diag", "SOCM_diag_2B", "UW_SOCM_diag_2B", "UW_SOCM_identity", "UW_SOCM_no_v", "UW_SOCM_no_nabla_b_term"]:
             sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
             identity = torch.eye(d).to(self.x0.device)
 
@@ -672,12 +674,16 @@ class SOC_Solver(nn.Module):
                     M_nabla_b_term[:, :-1, :, :, :],
                     torch.einsum("ij,abj->abi", sigma_inverse_transpose, noises),
                 )
+            if algorithm == "UW_SOCM_no_nabla_b_term":
+                least_squares_target_integrand_term_2 = torch.zeros_like(least_squares_target_integrand_term_2)
 
             least_squares_target_integrand_term_3 = -torch.einsum(
                 "ijmkn,jmn->ijmk",
                 M_nabla_b_term[:, :-1, :, :, :],
                 torch.einsum("ij,abj->abi", sigma_inverse_transpose, controls),
             )
+            if algorithm == "UW_SOCM_no_v" or algorithm == "UW_SOCM_no_nabla_b_term":
+                least_squares_target_integrand_term_3 = torch.zeros_like(least_squares_target_integrand_term_3)
 
             if use_stopping_time:
                 M_evals_final = M_evals[:, -1, :, :, :]
@@ -768,7 +774,7 @@ class SOC_Solver(nn.Module):
                     * weight.unsqueeze(0).unsqueeze(2)
                 ) / (torch.sum(stop_indicators))
             else:
-                if algorithm in ["UW_SOCM", "UW_SOCM_sc", "UW_SOCM_sc_2B", "UW_SOCM_diag", "UW_SOCM_diag_2B"]:
+                if algorithm in ["UW_SOCM", "UW_SOCM_sc", "UW_SOCM_sc_2B", "UW_SOCM_diag", "UW_SOCM_diag_2B", "UW_SOCM_identity", "UW_SOCM_no_v", "UW_SOCM_no_nabla_b_term"]:
                     objective = torch.sum(
                         (control_learned - control_target) ** 2
                     ) / (states.shape[0] * states.shape[1])

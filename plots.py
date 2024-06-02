@@ -79,7 +79,7 @@ def plot_loss(
             colors_cmap = cmap([1, 2, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17])
         elif cfg.method.plot_number == 3:
             # colors_cmap = cmap([1, 2, 3, 4])
-            colors_cmap = cmap([1, 2])
+            colors_cmap = cmap([1, 2, 3])
         elif cfg.method.plot_number == 4:
             colors_cmap = cmap([5, 6, 11, 12, 13, 14, 15, 16, 17, 18])
         elif cfg.method.plot_number == 6:
@@ -161,21 +161,33 @@ def plot_loss(
             print(f"iterations_array: {iterations_array}")
         elif variable == "EMA_SNR":
             variable_array = training_info[variable][first_point_SNR:]
-            iterations_array = first_point_SNR + np.linspace(
+            # iterations_array = first_point_SNR + np.linspace(
+            #     0,
+            #     len(variable_array),
+            #     num=len(variable_array),
+            #     endpoint=False,
+            #     dtype=int,
+            # )
+            iterations_array = first_point_SNR + np.arange(
                 0,
-                len(variable_array),
-                num=len(variable_array),
-                endpoint=False,
+                len(variable_array) * cfg.method.save_every,
+                cfg.method.save_every,
                 dtype=int,
             )
             print(f"iterations_array: {iterations_array}")
         elif variable == "normalized_IW_std_dev":
             variable_array = training_info[variable]
-            iterations_array = np.linspace(
+            # iterations_array = np.linspace(
+            #     0,
+            #     len(variable_array),
+            #     num=len(variable_array),
+            #     endpoint=False,
+            #     dtype=int,
+            # )
+            iterations_array = np.arange(
                 0,
-                len(variable_array),
-                num=len(variable_array),
-                endpoint=False,
+                len(variable_array) * cfg.method.save_every,
+                cfg.method.save_every,
                 dtype=int,
             )
         elif variable == "EMA_norm_sqd_diff_optimal":
@@ -183,11 +195,17 @@ def plot_loss(
             iterations_array = np.array(training_info["optimal_itr"])
         else:
             variable_array = torch.stack(training_info[variable]).detach().cpu().numpy()
-            iterations_array = np.linspace(
+            # iterations_array = np.linspace(
+            #     0,
+            #     len(variable_array),
+            #     num=len(variable_array),
+            #     endpoint=False,
+            #     dtype=int,
+            # )
+            iterations_array = np.arange(
                 0,
-                len(variable_array),
-                num=len(variable_array),
-                endpoint=False,
+                len(variable_array) * cfg.method.save_every,
+                cfg.method.save_every,
                 dtype=int,
             )
         print(
@@ -310,6 +328,7 @@ def main(cfg: DictConfig):
             "SOCM-Work",
             "SOCM-Work Diag.",
             "SOCM-Work Diag. " + r"$M_t(T)=0$",
+            "UW-SOCM " + r"$M_t=I$",
         ]
 
     # plot_number = 3
@@ -393,6 +412,7 @@ def main(cfg: DictConfig):
         alg_list = [
             "UW_SOCM",
             "UW_SOCM_diag",
+            "UW_SOCM_identity",
             # "UW_SOCM_diag_2B",
             # "continuous_adjoint",
         ]
@@ -512,7 +532,16 @@ def main(cfg: DictConfig):
         last_algorithm["EMA_grad_norm_sqd"] = 7
         last_algorithm["control_objective_mean"] = 7
         last_algorithm["EMA_norm_sqd_diff_optimal"] = 18
-        title = r"Quadratic Ornstein Uhlenbeck, hard, no warm start ($d=20$)"
+        if cfg.method.lmbd == 1:
+            title = r"Quadratic Ornstein Uhlenbeck, hard, no warm start ($d=20$)"
+        else:
+            title = fr"Quadratic Ornstein Uhlenbeck, hard, no warm start ($d=20$, $\lambda={cfg.method.lmbd}$)"
+    elif cfg.method.setting == "OU_quadratic_no_state_cost":
+        last_algorithm["EMA_norm_sqd_diff"] = 9
+        last_algorithm["EMA_grad_norm_sqd"] = 9
+        last_algorithm["control_objective_mean"] = 7
+        last_algorithm["EMA_norm_sqd_diff_optimal"] = 18
+        title = r"Linear Ornstein Uhlenbeck ($d=10$)"
     elif cfg.method.setting == "OU_linear":
         last_algorithm["EMA_norm_sqd_diff"] = 9
         last_algorithm["EMA_grad_norm_sqd"] = 9
@@ -530,6 +559,11 @@ def main(cfg: DictConfig):
         last_algorithm["control_objective_mean"] = 8
         plot_norm_sqd_diff = False
         title = r"Molecular dynamics ($d=1$)"
+    elif cfg.method.setting == "sampling_funnel":
+        last_algorithm["EMA_grad_norm_sqd"] = -1
+        last_algorithm["control_objective_mean"] = -1
+        plot_norm_sqd_diff = False
+        title = r"Sampling from Funnel Distribution ($d=10$)"
 
     if cfg.method.setting == "OU_quadratic_hard" and not cfg.method.use_warm_start:
         set_ylims = True
