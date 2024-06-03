@@ -168,6 +168,7 @@ def define_neural_sde(cfg, ts, x0, u_warm_start, **kwargs):
             scaling_factor_M=cfg.method.scaling_factor_M,
             u_warm_start=u_warm_start,
             use_warm_start=cfg.method.use_warm_start,
+            output_matrix=cfg.method.output_matrix,
         )
     elif cfg.method.setting == "OU_linear":
         neural_sde = OU_Linear(
@@ -182,6 +183,7 @@ def define_neural_sde(cfg, ts, x0, u_warm_start, **kwargs):
             gamma=cfg.method.gamma,
             scaling_factor_nabla_V=cfg.method.scaling_factor_nabla_V,
             scaling_factor_M=cfg.method.scaling_factor_M,
+            output_matrix=cfg.method.output_matrix,
         )
     elif cfg.method.setting == "double_well":
         neural_sde = DoubleWell(
@@ -196,6 +198,7 @@ def define_neural_sde(cfg, ts, x0, u_warm_start, **kwargs):
             gamma=cfg.method.gamma,
             scaling_factor_nabla_V=cfg.method.scaling_factor_nabla_V,
             scaling_factor_M=cfg.method.scaling_factor_M,
+            output_matrix=cfg.method.output_matrix,
         )
     elif cfg.method.setting == "molecular_dynamics":
         neural_sde = MolecularDynamics(
@@ -210,6 +213,7 @@ def define_neural_sde(cfg, ts, x0, u_warm_start, **kwargs):
             scaling_factor_nabla_V=cfg.method.scaling_factor_nabla_V,
             scaling_factor_M=cfg.method.scaling_factor_M,
             use_stopping_time=cfg.method.use_stopping_time,
+            output_matrix=cfg.method.output_matrix,
         )
     elif cfg.method.setting in ["sampling_cox", "sampling_funnel", "sampling_MG"]:
         neural_sde = Sampler(
@@ -223,6 +227,7 @@ def define_neural_sde(cfg, ts, x0, u_warm_start, **kwargs):
             gamma=cfg.method.gamma,
             scaling_factor_nabla_V=cfg.method.scaling_factor_nabla_V,
             scaling_factor_M=cfg.method.scaling_factor_M,
+            output_matrix=cfg.method.output_matrix,
         )
     neural_sde.initialize_models(cfg.method.algorithm)
     return neural_sde

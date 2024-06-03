@@ -24,6 +24,7 @@ class DoubleWell(method.NeuralSDE):
         gamma=3.0,
         scaling_factor_nabla_V=1.0,
         scaling_factor_M=1.0,
+        output_matrix=False,
     ):
         super().__init__(
             device=device,
@@ -36,6 +37,7 @@ class DoubleWell(method.NeuralSDE):
             gamma=gamma,
             scaling_factor_nabla_V=scaling_factor_nabla_V,
             scaling_factor_M=scaling_factor_M,
+            output_matrix=output_matrix,
         )
         self.kappa = kappa
         self.nu = nu

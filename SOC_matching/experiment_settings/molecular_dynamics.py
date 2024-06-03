@@ -26,6 +26,7 @@ class MolecularDynamics(method.NeuralSDE):
         u_warm_start=None,
         use_warm_start=False,
         use_stopping_time=False,
+        output_matrix=False,
     ):
         super().__init__(
             device=device,
@@ -42,6 +43,7 @@ class MolecularDynamics(method.NeuralSDE):
             u_warm_start=u_warm_start,
             use_warm_start=use_warm_start,
             use_stopping_time=use_stopping_time,
+            output_matrix=output_matrix,
         )
         self.kappa = kappa
 

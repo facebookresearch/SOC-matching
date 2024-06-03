@@ -163,6 +163,7 @@ def main(cfg: DictConfig):
         lmbd=cfg.method.lmbd,
         d=cfg.method.d,
         sigma=sigma,
+        output_matrix=cfg.method.output_matrix,
     )
 
     if algorithm == "SOCM_exp":

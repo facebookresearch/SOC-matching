@@ -34,6 +34,7 @@ class NeuralSDE(torch.nn.Module):
         u_warm_start=None,
         use_warm_start=False,
         use_stopping_time=False,
+        output_matrix=False,
     ):
         super().__init__()
         self.device = device
@@ -53,6 +54,7 @@ class NeuralSDE(torch.nn.Module):
         self.u_warm_start = u_warm_start
         self.use_warm_start = use_warm_start
         self.use_stopping_time = use_stopping_time
+        self.output_matrix = output_matrix
 
     # Control
     def control(self, t, x, verbose=False):
@@ -138,13 +140,15 @@ class NeuralSDE(torch.nn.Module):
                     hdims=self.hdims_M,
                     gamma=self.gamma,
                     scaling_factor=self.scaling_factor_M,
+                    output_matrix=self.output_matrix,
                 ).to(self.device)
-            if algorithm in ['SOCM_diag','UW_SOCM_diag','SOCM_cost_diag','SOCM_work_diag']:
+            elif algorithm in ['SOCM_diag','UW_SOCM_diag','SOCM_cost_diag','SOCM_work_diag']:
                 self.M = models.DiagonalSigmoidMLP(
                     dim=self.dim,
                     hdims=self.hdims_M,
                     gamma=self.gamma,
                     scaling_factor=self.scaling_factor_M,
+                    output_matrix=self.output_matrix,
                 ).to(self.device)
             elif algorithm in ['SOCM_sc_2B','UW_SOCM_sc_2B','SOCM_cost_sc_2B','SOCM_work_sc_2B']:
                 self.gamma2 = torch.nn.Parameter(
@@ -156,6 +160,7 @@ class NeuralSDE(torch.nn.Module):
                     gamma=self.gamma,
                     gamma2=self.gamma2,
                     scaling_factor=self.scaling_factor_M,
+                    output_matrix=self.output_matrix,
                 ).to(self.device)
             elif algorithm in ['SOCM_diag_2B','UW_SOCM_diag_2B','SOCM_cost_diag_2B','SOCM_work_diag_2B']:
                 self.gamma2 = torch.nn.Parameter(
@@ -167,10 +172,12 @@ class NeuralSDE(torch.nn.Module):
                     gamma=self.gamma,
                     gamma2=self.gamma2,
                     scaling_factor=self.scaling_factor_M,
+                    output_matrix=self.output_matrix,
                 ).to(self.device)
             elif algorithm in ['SOCM_cost_identity','SOCM_work_identity','SOCM_cost_identity_2B','SOCM_work_identity_2B','UW_SOCM_identity']:
                 self.M = models.Identity(
                     dim=self.dim,
+                    output_matrix=self.output_matrix,
                 ).to(self.device)
             else:
                 self.M = models.SigmoidMLP(
@@ -198,6 +205,7 @@ class SOC_Solver(nn.Module):
         lmbd=1.0,
         d=2,
         sigma=torch.eye(2),
+        output_matrix=False,
     ):
         super().__init__()
         self.dim = neural_sde.dim
@@ -212,6 +220,7 @@ class SOC_Solver(nn.Module):
         self.d = d
         self.y0 = torch.nn.Parameter(torch.randn(1, device=x0.device))
         self.sigma = sigma
+        self.output_matrix = output_matrix
 
     def control(self, t0, x0):
         x0 = x0.reshape(-1, self.dim)
@@ -529,6 +538,12 @@ class SOC_Solver(nn.Module):
         if algorithm in ["SOCM", "UW_SOCM", 
                          "SOCM_sc", "UW_SOCM_sc", "SOCM_sc_2B", "UW_SOCM_sc_2B",
                          "SOCM_diag", "UW_SOCM_diag", "SOCM_diag_2B", "UW_SOCM_diag_2B", "UW_SOCM_identity", "UW_SOCM_no_v", "UW_SOCM_no_nabla_b_term"]:
+            if self.output_matrix:
+                diagonal_M = False
+                scalar_M = False
+            else:
+                diagonal_M = algorithm in ["SOCM_diag", "UW_SOCM_diag", "SOCM_diag_2B", "UW_SOCM_diag_2B"]
+                scalar_M = algorithm in ["SOCM_sc", "UW_SOCM_sc", "SOCM_sc_2B", "UW_SOCM_sc_2B", "UW_SOCM_identity"]
             sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
             identity = torch.eye(d).to(self.x0.device)
 
@@ -559,18 +574,42 @@ class SOC_Solver(nn.Module):
 
             else:
                 sum_M = lambda t, s: self.neural_sde.M(t, s).sum(dim=0)
+                # print(f'self.neural_sde.M: {self.neural_sde.M}')
 
-                derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
-                derivative_M = lambda t, s: torch.transpose(
-                    torch.transpose(derivative_M_0(t, s), 1, 2), 0, 1
-                )
+                if diagonal_M:
+                    derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
+                    derivative_M = lambda t, s: torch.transpose(derivative_M_0(t, s), 0, 1)
 
-                M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
-                    self.ts.device
-                )
-                derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
-                    self.ts.device
-                )
+                    M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
+                        self.ts.device
+                    )
+                    derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
+                        self.ts.device
+                    )
+
+                elif scalar_M:
+                    derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
+                    derivative_M = lambda t, s: derivative_M_0(t, s)
+
+                    M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
+                        self.ts.device
+                    )
+                    derivative_M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
+                        self.ts.device
+                    )
+
+                else:
+                    derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
+                    derivative_M = lambda t, s: torch.transpose(
+                        torch.transpose(derivative_M_0(t, s), 1, 2), 0, 1
+                    )
+
+                    M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
+                        self.ts.device
+                    )
+                    derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
+                        self.ts.device
+                    )
 
             if use_stopping_time:
                 stopping_function_output_int = (self.neural_sde.Phi(states) > 0).to(
@@ -622,14 +661,34 @@ class SOC_Solver(nn.Module):
                     t_vector,
                     s_vector,
                 )
+                # print(f'torch.sum(M_evals_all): {torch.sum(M_evals_all)}, torch.sum(derivative_M_evals_all): {torch.sum(derivative_M_evals_all)}')
+                # print(f'torch.sum(M_evals_all[-1]): {torch.sum(M_evals_all[-1])}, torch.sum(derivative_M_evals_all[-1]): {torch.sum(derivative_M_evals_all[-1])}')
+                # print(f'M_evals_all.shape: {M_evals_all.shape}, derivative_M_evals_all.shape: {derivative_M_evals_all.shape}')
+                # print(f'M_evals_all.shape: {M_evals_all.shape},derivative_M_evals_all.shape: {derivative_M_evals_all.shape}')
                 counter = 0
                 for k, t in enumerate(self.ts):
-                    M_evals[k, k:, :, :] = M_evals_all[
-                        counter : (counter + self.num_steps + 1 - k), :, :
-                    ]
-                    derivative_M_evals[k, k:, :, :] = derivative_M_evals_all[
-                        counter : (counter + self.num_steps + 1 - k), :, :
-                    ]
+                    if diagonal_M:
+                        M_evals[k, k:, :] = M_evals_all[
+                            counter : (counter + self.num_steps + 1 - k), :
+                        ]
+                        derivative_M_evals[k, k:, :] = derivative_M_evals_all[
+                            counter : (counter + self.num_steps + 1 - k), :
+                        ]
+                    elif scalar_M:
+                        # print(f'M_evals.shape: {M_evals.shape}, M_evals_all.shape: {M_evals_all.shape}')
+                        M_evals[k, k:] = M_evals_all[
+                            counter : (counter + self.num_steps + 1 - k)
+                        ]
+                        derivative_M_evals[k, k:] = derivative_M_evals_all[
+                            counter : (counter + self.num_steps + 1 - k)
+                        ]
+                    else:
+                        M_evals[k, k:, :, :] = M_evals_all[
+                            counter : (counter + self.num_steps + 1 - k), :, :
+                        ]
+                        derivative_M_evals[k, k:, :, :] = derivative_M_evals_all[
+                            counter : (counter + self.num_steps + 1 - k), :, :
+                        ]
                     counter += self.num_steps + 1 - k
 
             if use_stopping_time:
@@ -639,11 +698,20 @@ class SOC_Solver(nn.Module):
                     self.neural_sde.nabla_f(self.ts, states),
                 )[:, :-1, :, :]
             else:
-                least_squares_target_integrand_term_1 = torch.einsum(
-                    "ijkl,jml->ijmk",
-                    M_evals,
-                    self.neural_sde.nabla_f(self.ts, states),
-                )[:, :-1, :, :]
+                if diagonal_M:
+                    # print(f'M_evals.shape: {M_evals.shape}, self.neural_sde.nabla_f(self.ts, states).shape: {self.neural_sde.nabla_f(self.ts, states).shape}')
+                    least_squares_target_integrand_term_1 = (M_evals[:, :, None, :]
+                                                             * self.neural_sde.nabla_f(self.ts, states)[None, :, :, :])[:, :-1, :, :]
+                elif scalar_M:
+                    least_squares_target_integrand_term_1 = (M_evals[:, :, None, None]
+                                                             * self.neural_sde.nabla_f(self.ts, states)[None, :, :, :])[:, :-1, :, :]
+                else:
+                    least_squares_target_integrand_term_1 = torch.einsum(
+                        "ijkl,jml->ijmk",
+                        M_evals,
+                        self.neural_sde.nabla_f(self.ts, states),
+                    )[:, :-1, :, :]
+                # print(f'torch.sum(least_squares_target_integrand_term_1): {torch.sum(least_squares_target_integrand_term_1)}')
 
             if use_stopping_time:
                 M_nabla_b_term = (
@@ -662,11 +730,21 @@ class SOC_Solver(nn.Module):
                     torch.einsum("ij,abj->abi", sigma_inverse_transpose, noises),
                 )
             else:
-                M_nabla_b_term = torch.einsum(
-                    "ijkl,jmln->ijmkn",
-                    M_evals,
-                    self.neural_sde.nabla_b(self.ts, states),
-                ) - derivative_M_evals.unsqueeze(2)
+                if diagonal_M:
+                    # print(f'M_evals[:, :, None, :, None].shape: {M_evals[:, :, None, :, None].shape}')
+                    # print(f'self.neural_sde.nabla_b(self.ts, states)[None, :, :, :, :].shape: {self.neural_sde.nabla_b(self.ts, states)[None, :, :, :, :].shape}')
+                    M_nabla_b_term = (M_evals[:, :, None, :, None] * self.neural_sde.nabla_b(self.ts, states)[None, :, :, :, :] 
+                                      - derivative_M_evals[:, :, None, :, None])
+                elif scalar_M:
+                    M_nabla_b_term = (M_evals[:, :, None, None, None] * self.neural_sde.nabla_b(self.ts, states)[None, :, :, :, :] 
+                                      - derivative_M_evals[:, :, None, None, None])
+                else:
+                    M_nabla_b_term = torch.einsum(
+                        "ijkl,jmln->ijmkn",
+                        M_evals,
+                        self.neural_sde.nabla_b(self.ts, states),
+                    ) - derivative_M_evals.unsqueeze(2)
+                # print(f'M_nabla_b_term.shape: {M_nabla_b_term.shape}, torch.mean(M_nabla_b_term): {torch.mean(M_nabla_b_term)}')
                 least_squares_target_integrand_term_2 = -np.sqrt(
                     self.lmbd
                 ) * torch.einsum(
@@ -693,16 +771,24 @@ class SOC_Solver(nn.Module):
                     self.neural_sde.nabla_g(states[-1, :, :]),
                 )
             else:
-                M_evals_final = M_evals[:, -1, :, :]
-                # print(f'M_evals_final.shape: {M_evals_final.shape}')
-                # print(f'M_evals_final: {M_evals_final[25,:,:]}')
-                # print(f'torch.mean(M_evals): {torch.mean(M_evals)}')
-                # print(f'torch.mean(M_evals_final): {torch.mean(M_evals_final)}, torch.mean(M_evals_final**2): {torch.mean(M_evals_final**2)}')
-                least_squares_target_terminal = torch.einsum(
-                    "ikl,ml->imk",
-                    M_evals_final,
-                    self.neural_sde.nabla_g(states[-1, :, :]),
-                )
+                if diagonal_M:
+                    M_evals_final = M_evals[:, -1, :]
+                    least_squares_target_terminal = (M_evals_final[:, None, :] * self.neural_sde.nabla_g(states[-1, :, :])[None, :, :])
+                elif scalar_M:
+                    M_evals_final = M_evals[:, -1]
+                    least_squares_target_terminal = (M_evals_final[:, None, None] * self.neural_sde.nabla_g(states[-1, :, :])[None, :, :])
+                else:
+                    M_evals_final = M_evals[:, -1, :, :]
+                    # print(f'M_evals_final.shape: {M_evals_final.shape}')
+                    # print(f'M_evals_final: {M_evals_final[25,:,:]}')
+                    # print(f'torch.mean(M_evals): {torch.mean(M_evals)}')
+                    # print(f'torch.mean(M_evals_final): {torch.mean(M_evals_final)}, torch.mean(M_evals_final**2): {torch.mean(M_evals_final**2)}')
+                    least_squares_target_terminal = torch.einsum(
+                        "ikl,ml->imk",
+                        M_evals_final,
+                        self.neural_sde.nabla_g(states[-1, :, :]),
+                    )
+                # print(f'least_squares_target_terminal.shape: {least_squares_target_terminal.shape}, torch.sum(least_squares_target_terminal): {torch.sum(least_squares_target_terminal)}')
 
             if use_stopping_time:
                 least_squares_target_integrand_term_1_times_dt = (

@@ -29,6 +29,7 @@ class Multiagent8(method.NeuralSDE):
         T=1.0,
         u_warm_start=None,
         use_warm_start=False,
+        output_matrix=False,
     ):
         super().__init__(
             device=device,
@@ -44,6 +45,7 @@ class Multiagent8(method.NeuralSDE):
             T=T,
             u_warm_start=u_warm_start,
             use_warm_start=use_warm_start,
+            output_matrix=output_matrix,
         )
         self.g_center = g_center
         self.g_coeff = g_coeff
