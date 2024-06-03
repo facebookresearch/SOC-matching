@@ -382,13 +382,14 @@ class DiagonalSigmoidMLP(torch.nn.Module):
             return output
     
 class TwoBoundaryScalarSigmoidMLP(torch.nn.Module):
-    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, gamma2=3.0, gamma3=10.0, scaling_factor=1.0, output_matrix=False):
+    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, gamma2=3.0, gamma3=10.0, scaling_factor=1.0, T=1.0, output_matrix=False):
         super().__init__()
 
         self.dim = dim
         self.gamma = gamma
         self.gamma2 = gamma2
         self.gamma3 = gamma3
+        self.T = T
         self.output_matrix = output_matrix
         self.sigmoid_layers = nn.Sequential(
             nn.Linear(2, hdims[0]),
@@ -408,9 +409,10 @@ class TwoBoundaryScalarSigmoidMLP(torch.nn.Module):
         ts = torch.cat((t.unsqueeze(1), s.unsqueeze(1)), dim=1)
         sigmoid_layers_output = self.sigmoid_layers(ts).unsqueeze(2)
 
-        exp_denominator = 1 / (1 - ts[:, 0])
-        exp_denominator[-1] = 1.0
+        exp_denominator = 1 / (self.T - ts[:, 0])
+        # exp_denominator[-1] = 1.0
         factor1 = torch.exp(- self.gamma3 * (ts[:, 1] - ts[:, 0]) / exp_denominator)
+        factor1 = torch.nan_to_num(factor1, nan=1.0, posinf=1.0, neginf=1.0)
 
         factor2 = (1 - torch.exp(-self.gamma * (ts[:, 1] - ts[:, 0]))) * (torch.exp(-self.gamma2 * (ts[:, 1] - ts[:, 0])) - torch.exp(-self.gamma2 * (1 - ts[:, 0])))
         identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)
@@ -419,13 +421,14 @@ class TwoBoundaryScalarSigmoidMLP(torch.nn.Module):
         return output
     
 class TwoBoundaryDiagonalSigmoidMLP(torch.nn.Module):
-    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, gamma2=3.0, gamma3=10.0, scaling_factor=1.0, output_matrix=False):
+    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, gamma2=3.0, gamma3=10.0, scaling_factor=1.0, T=1.0, output_matrix=False):
         super().__init__()
 
         self.dim = dim
         self.gamma = gamma
         self.gamma2 = gamma2
         self.gamma3 = gamma3
+        self.T = T
         self.output_matrix = output_matrix
         self.sigmoid_layers = nn.Sequential(
             nn.Linear(2, hdims[0]),
@@ -448,8 +451,27 @@ class TwoBoundaryDiagonalSigmoidMLP(torch.nn.Module):
         # exp_denominator = 1 / (1 - ts[:, 0])
         # exp_denominator[-1] = 1.0
         # factor1 = torch.exp(- self.gamma3 * (ts[:, 1] - ts[:, 0]) / exp_denominator)
-        factor1 = 1 - (ts[:, 1] - ts[:, 0]) / (1 - ts[:, 0])
-        factor1[-1] = 0.0
+        # print(f'self.T: {self.T}')
+        factor1 = 1 - (ts[:, 1] - ts[:, 0]) / (self.T - ts[:, 0])
+        factor1 = torch.nan_to_num(factor1, nan=1.0, posinf=1.0, neginf=1.0)
+        # print(f'torch.max(ts[:, 1]): {torch.max(ts[:, 1])}, torch.min(ts[:, 1]): {torch.min(ts[:, 1])}')
+        # print(f'torch.max(ts[:, 0]): {torch.max(ts[:, 0])}, torch.min(ts[:, 0]): {torch.min(ts[:, 0])}')
+        # print(f'torch.max(ts[:, 1] - ts[:, 0]): {torch.max(ts[:, 1] - ts[:, 0])}, torch.min(ts[:, 1] - ts[:, 0]): {torch.min(ts[:, 1] - ts[:, 0])}')
+        # print(f'torch.max((ts[:, 1] - ts[:, 0]) / (self.T + 1e-4 - ts[:, 0])): {torch.max((ts[:, 1] - ts[:, 0]) / (self.T + 1e-4 - ts[:, 0]))}, torch.min((ts[:, 1] - ts[:, 0]) / (self.T - ts[:, 0])): {torch.min((ts[:, 1] - ts[:, 0]) / (self.T - ts[:, 0]))}')
+        # print(f'torch.max(factor1): {torch.max(factor1)}, torch.min(factor1): {torch.min(factor1)}')
+        argmax_factor1 = torch.argmax(factor1)
+        argmin_factor1 = torch.argmin(factor1)
+        # print(f'torch.argmax(factor1): {torch.argmax(factor1)}, torch.argmin(factor1): {torch.argmin(factor1)}')
+        # factor1[-1] = 0.0
+        # print(f'ts[argmax_factor1, 1]: {ts[argmax_factor1, 1]}, ts[argmax_factor1, 0]: {ts[argmax_factor1, 0]}')
+        # print(f'ts[argmin_factor1, 1]: {ts[argmin_factor1, 1]}, ts[argmin_factor1, 0]: {ts[argmin_factor1, 0]}')
+        # Count the number of NaNs
+        num_nans = torch.isnan(factor1).sum().item()
+        # print(f"Number of NaNs: {num_nans}")
+        # Find positions of NaNs
+        nan_positions = torch.nonzero(torch.isnan(factor1), as_tuple=False)
+        # print(f'nan_positions: {nan_positions}, len(factor1): {len(factor1)}')
+        # print(f'factor1[1830]: {factor1[1830]}, ts[1830, 0]: {ts[1830, 0]}, ts[1830, 1]: {ts[1830, 1]}')
         # print(f'factor1[-50:]: {factor1[-50:]}')
         # print(f'ts[-50:, 0]: {ts[-50:, 0]}, ts[-50:, 1]: {ts[-50:, 1]}')
 
@@ -457,6 +479,7 @@ class TwoBoundaryDiagonalSigmoidMLP(torch.nn.Module):
         identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)
 
         output = factor1[:,None,None] * identity.repeat(ts.shape[0], 1, 1) + sigmoid_layers_output * factor2[:,None,None]
+        # print(f'TwoBoundaryDiagonalSigmoidMLP torch.mean(output): {torch.mean(output)}, torch.mean(factor1): {torch.mean(factor1)}, torch.mean(sigmoid_layers_output): {torch.mean(sigmoid_layers_output)}, torch.mean(factor2): {torch.mean(factor2)}')
         return output
 
 

@@ -520,7 +520,10 @@ def main(cfg: DictConfig):
                                 f"soc_solver.neural_sde.M.gamma: {soc_solver.neural_sde.M.gamma.item()}"
                             )
                         elif algorithm == "reinf_unadj" or algorithm == "reinf":
-                            print(f'normalization_const: {normalization_const}, norms_sqd_diff: {norm_sqd_diff.item()}, weight_mean: {weight_mean}')
+                            if compute_L2_error:
+                                print(f'normalization_const: {normalization_const}, norms_sqd_diff: {norm_sqd_diff.item()}, weight_mean: {weight_mean}')
+                            else:
+                                print(f'normalization_const: {normalization_const}, weight_mean: {weight_mean}')
                         if cfg.method.use_stopping_time:
                             print(
                                 f"torch.mean(stop_indicators): {torch.mean(stop_indicators)}"

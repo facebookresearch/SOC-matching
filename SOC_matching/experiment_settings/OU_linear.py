@@ -21,8 +21,10 @@ class OU_Linear(method.NeuralSDE):
         sigma=torch.eye(2),
         omega=torch.ones(2),
         gamma=3.0,
+        T=1.0,
         scaling_factor_nabla_V=1.0,
         scaling_factor_M=1.0,
+        output_matrix=False,
     ):
         super().__init__(
             device=device,
@@ -33,8 +35,10 @@ class OU_Linear(method.NeuralSDE):
             lmbd=lmbd,
             sigma=sigma,
             gamma=gamma,
+            T=T,
             scaling_factor_nabla_V=scaling_factor_nabla_V,
             scaling_factor_M=scaling_factor_M,
+            output_matrix=output_matrix,
         )
         self.A = A
         self.omega = omega

@@ -160,6 +160,7 @@ class NeuralSDE(torch.nn.Module):
                     gamma=self.gamma,
                     gamma2=self.gamma2,
                     scaling_factor=self.scaling_factor_M,
+                    T = self.T,
                     output_matrix=self.output_matrix,
                 ).to(self.device)
             elif algorithm in ['SOCM_diag_2B','UW_SOCM_diag_2B','SOCM_cost_diag_2B','SOCM_work_diag_2B']:
@@ -172,6 +173,7 @@ class NeuralSDE(torch.nn.Module):
                     gamma=self.gamma,
                     gamma2=self.gamma2,
                     scaling_factor=self.scaling_factor_M,
+                    T = self.T,
                     output_matrix=self.output_matrix,
                 ).to(self.device)
             elif algorithm in ['SOCM_cost_identity','SOCM_work_identity','SOCM_cost_identity_2B','SOCM_work_identity_2B','UW_SOCM_identity']:
@@ -893,6 +895,7 @@ class SOC_Solver(nn.Module):
             control_learned = -torch.einsum(
                     "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
                 )
+            # print(f'self.sigma.dtype: {self.sigma.dtype}, nabla_V.dtype: {nabla_V.dtype}, control_learned.dtype: {control_learned.dtype}, a_vectors.dtype: {a_vectors.dtype}')
             control_target = -torch.einsum(
                 "ij,...j->...i",
                 torch.transpose(self.sigma, 0, 1),
@@ -958,7 +961,11 @@ class SOC_Solver(nn.Module):
             weight = weight.detach()
 
         elif algorithm == "reinf":
-            reward = -self.lmbd * (
+            # reward = -self.lmbd * (
+            #     log_path_weight_deterministic + log_terminal_weight
+            # ).detach()
+            #### TO DEBUG lmbda ####
+            reward = -np.sqrt(self.lmbd) * (
                 log_path_weight_deterministic + log_terminal_weight
             ).detach()
             control_learned = -torch.einsum(
@@ -985,7 +992,12 @@ class SOC_Solver(nn.Module):
         #     weight = weight.detach()
 
         elif algorithm == "reinf_fr":
-            reward = -self.lmbd * (
+            # reward = -self.lmbd * (
+            #     log_path_weight_deterministic_tensor[-1,:].unsqueeze(0) - log_path_weight_deterministic_tensor[:-1,:]
+            #     + log_terminal_weight.unsqueeze(0)
+            # ).detach()
+            #### TO DEBUG lmbda ####
+            reward = -np.sqrt(self.lmbd) * (
                 log_path_weight_deterministic_tensor[-1,:].unsqueeze(0) - log_path_weight_deterministic_tensor[:-1,:]
                 + log_terminal_weight.unsqueeze(0)
             ).detach()
@@ -1107,17 +1119,29 @@ class SOC_Solver(nn.Module):
 
             nabla_control_noise = torch.autograd.grad(control_autograd_arg(self.ts, states).sum(), states)[0]
 
-            least_squares_target_integrand_term_2 = -np.sqrt(
-                self.lmbd
-            ) * torch.einsum(
+            # least_squares_target_integrand_term_2 = -np.sqrt(
+            #     self.lmbd
+            # ) * torch.einsum(
+            #     "ijkl,jml->ijmk",
+            #     M_evals[:,:-1,:,:],
+            #     nabla_control_noise[:-1,:,:],
+            # )
+            #### TO DEBUG lmbda ####
+            least_squares_target_integrand_term_2 = -torch.einsum(
                 "ijkl,jml->ijmk",
                 M_evals[:,:-1,:,:],
                 nabla_control_noise[:-1,:,:],
             )
 
-            least_squares_target_integrand_term_3 = np.sqrt(
-                self.lmbd
-            ) * torch.einsum(
+            # least_squares_target_integrand_term_3 = np.sqrt(
+            #     self.lmbd
+            # ) * torch.einsum(
+            #     "ijkl,jml->ijmk",
+            #     derivative_M_evals[:,:-1,:,:],
+            #     torch.einsum("ij,abj->abi", sigma_inverse_transpose, noises)
+            # )
+            #### TO DEBUG lmbda ####
+            least_squares_target_integrand_term_3 = torch.einsum(
                 "ijkl,jml->ijmk",
                 derivative_M_evals[:,:-1,:,:],
                 torch.einsum("ij,abj->abi", sigma_inverse_transpose, noises)
@@ -1133,6 +1157,7 @@ class SOC_Solver(nn.Module):
                 least_squares_target_integrand_term_2_3_times_sqrt_dt, dim=1
             )
 
+            # print(f'log_path_weight_deterministic_tensor.dtype: {log_path_weight_deterministic_tensor.dtype}, log_terminal_weight.dtype: {log_terminal_weight.dtype}')
             reward = - np.sqrt(self.lmbd) * (
                 log_path_weight_deterministic_tensor[-1,:].unsqueeze(0) - log_path_weight_deterministic_tensor
                 + log_terminal_weight.unsqueeze(0)
@@ -1140,15 +1165,17 @@ class SOC_Solver(nn.Module):
 
             reward_times_M_term = reward.unsqueeze(2) * cumsum_least_squares_term_2_3 
 
+            # print(f'cumsum_least_squares_term_1.dtype: {cumsum_least_squares_term_1.dtype}, least_squares_target_terminal.dtype: {least_squares_target_terminal.dtype}, reward_times_M_term.dtype: {reward_times_M_term.dtype}')
             cum_terms = cumsum_least_squares_term_1 + least_squares_target_terminal - reward_times_M_term
 
             control_learned = -torch.einsum(
                 "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
             )
+            # print(f'self.sigma.dtype: {self.sigma.dtype}, cum_terms.dtype: {cum_terms.dtype}')
             control_target = -torch.einsum(
                 "ij,...j->...i",
                 torch.transpose(self.sigma, 0, 1),
-                cum_terms,
+                cum_terms.to(self.sigma.dtype),
             )
 
             # if algorithm == "SOCM_cost":
@@ -1276,17 +1303,29 @@ class SOC_Solver(nn.Module):
 
             nabla_control_noise = torch.autograd.grad(control_autograd_arg(self.ts, states).sum(), states)[0]
 
-            least_squares_target_integrand_term_2 = -np.sqrt(
-                self.lmbd
-            ) * torch.einsum(
+            # least_squares_target_integrand_term_2 = -np.sqrt(
+            #     self.lmbd
+            # ) * torch.einsum(
+            #     "ijkl,jml->ijmk",
+            #     M_evals[:,:-1,:,:],
+            #     nabla_control_noise[:-1,:,:],
+            # )
+            #### TO DEBUG lmbda ####
+            least_squares_target_integrand_term_2 = -torch.einsum(
                 "ijkl,jml->ijmk",
                 M_evals[:,:-1,:,:],
                 nabla_control_noise[:-1,:,:],
             )
 
-            least_squares_target_integrand_term_3 = np.sqrt(
-                self.lmbd
-            ) * torch.einsum(
+            # least_squares_target_integrand_term_3 = np.sqrt(
+            #     self.lmbd
+            # ) * torch.einsum(
+            #     "ijkl,jml->ijmk",
+            #     derivative_M_evals[:,:-1,:,:],
+            #     torch.einsum("ij,abj->abi", sigma_inverse_transpose, noises)
+            # )
+            #### TO DEBUG lmbda ####
+            least_squares_target_integrand_term_3 = torch.einsum(
                 "ijkl,jml->ijmk",
                 derivative_M_evals[:,:-1,:,:],
                 torch.einsum("ij,abj->abi", sigma_inverse_transpose, noises)
@@ -1317,7 +1356,7 @@ class SOC_Solver(nn.Module):
             control_target = -torch.einsum(
                 "ij,...j->...i",
                 torch.transpose(self.sigma, 0, 1),
-                cum_terms,
+                cum_terms.to(self.sigma.dtype),
             )
 
             # if algorithm == "SOCM_cost":

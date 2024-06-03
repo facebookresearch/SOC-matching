@@ -71,6 +71,7 @@ def ground_truth_control(cfg, ts, x0, **kwargs):
             A=kwargs["A"],
             omega=kwargs["omega"],
             sigma=kwargs["sigma"],
+            T=cfg.method.T,
         )
 
         return optimal_sde
@@ -81,6 +82,7 @@ def ground_truth_control(cfg, ts, x0, **kwargs):
             kappa=kwargs["kappa"],
             nu=kwargs["nu"],
             sigma=kwargs["sigma"],
+            T=cfg.method.T,
         )
         xb = 2.75
         delta_t = cfg.method.delta_t_optimal
@@ -164,6 +166,7 @@ def define_neural_sde(cfg, ts, x0, u_warm_start, **kwargs):
             Q=kwargs["Q"],
             sigma=kwargs["sigma"],
             gamma=cfg.method.gamma,
+            T=cfg.method.T,
             scaling_factor_nabla_V=cfg.method.scaling_factor_nabla_V,
             scaling_factor_M=cfg.method.scaling_factor_M,
             u_warm_start=u_warm_start,
@@ -181,6 +184,7 @@ def define_neural_sde(cfg, ts, x0, u_warm_start, **kwargs):
             omega=kwargs["omega"],
             sigma=kwargs["sigma"],
             gamma=cfg.method.gamma,
+            T=cfg.method.T,
             scaling_factor_nabla_V=cfg.method.scaling_factor_nabla_V,
             scaling_factor_M=cfg.method.scaling_factor_M,
             output_matrix=cfg.method.output_matrix,
@@ -196,6 +200,7 @@ def define_neural_sde(cfg, ts, x0, u_warm_start, **kwargs):
             nu=kwargs["nu"],
             sigma=kwargs["sigma"],
             gamma=cfg.method.gamma,
+            T=cfg.method.T,
             scaling_factor_nabla_V=cfg.method.scaling_factor_nabla_V,
             scaling_factor_M=cfg.method.scaling_factor_M,
             output_matrix=cfg.method.output_matrix,
@@ -210,6 +215,7 @@ def define_neural_sde(cfg, ts, x0, u_warm_start, **kwargs):
             kappa=kwargs["kappa"],
             sigma=kwargs["sigma"],
             gamma=cfg.method.gamma,
+            T=cfg.method.T,
             scaling_factor_nabla_V=cfg.method.scaling_factor_nabla_V,
             scaling_factor_M=cfg.method.scaling_factor_M,
             use_stopping_time=cfg.method.use_stopping_time,
@@ -225,6 +231,7 @@ def define_neural_sde(cfg, ts, x0, u_warm_start, **kwargs):
             lmbd=cfg.method.lmbd,
             sigma=kwargs["sigma"],
             gamma=cfg.method.gamma,
+            T=cfg.method.T,
             scaling_factor_nabla_V=cfg.method.scaling_factor_nabla_V,
             scaling_factor_M=cfg.method.scaling_factor_M,
             output_matrix=cfg.method.output_matrix,
