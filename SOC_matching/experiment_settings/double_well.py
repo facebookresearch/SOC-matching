@@ -102,7 +102,6 @@ class DoubleWell(method.NeuralSDE):
 
     # Potential
     def potential(self, x):
-        # return torch.einsum('j,bj->b', self.gamma, x)
         if len(x.shape) == 2:
             return torch.sum(
                 self.kappa.unsqueeze(0) * (x**2 - 1) ** 2, dim=1

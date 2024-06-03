@@ -97,9 +97,6 @@ class Sampler(method.NeuralSDE):
         x: (B, dim)
         output: (B,)
         """
-        # diff = x - self.g_center
-        # loss = (diff * diff).sum(-1)
-        # return (loss - 160) * self.g_coeff #- 120
         if self.setting == "sampling_cox":
             return -self.cox.evaluate_log_density(x)
 
@@ -136,7 +133,3 @@ class Sampler(method.NeuralSDE):
     # Gradient of state cost
     def nabla_f(self, t, x):
         return torch.zeros_like(x).to(x.device)
-        # with torch.enable_grad():
-        #     x = x.requires_grad_(True)
-        #     output = torch.autograd.grad(self.f(t, x).sum(), x)[0]
-        #     return output

@@ -177,13 +177,6 @@ def plot_loss(
             print(f"iterations_array: {iterations_array}")
         elif variable == "normalized_IW_std_dev":
             variable_array = training_info[variable]
-            # iterations_array = np.linspace(
-            #     0,
-            #     len(variable_array),
-            #     num=len(variable_array),
-            #     endpoint=False,
-            #     dtype=int,
-            # )
             iterations_array = np.arange(
                 0,
                 len(variable_array) * cfg.method.save_every,
@@ -195,13 +188,6 @@ def plot_loss(
             iterations_array = np.array(training_info["optimal_itr"])
         else:
             variable_array = torch.stack(training_info[variable]).detach().cpu().numpy()
-            # iterations_array = np.linspace(
-            #     0,
-            #     len(variable_array),
-            #     num=len(variable_array),
-            #     endpoint=False,
-            #     dtype=int,
-            # )
             iterations_array = np.arange(
                 0,
                 len(variable_array) * cfg.method.save_every,
@@ -211,9 +197,6 @@ def plot_loss(
         print(
             f"variable_array.shape: {variable_array.shape}, iterations_array.shape: {iterations_array.shape}"
         )
-        # print(f"np.mean(variable_array): {np.mean(variable_array)}")
-        # print(f'variable_array[:20]: {variable_array[:20]}')
-        # print(f'variable_array[-20:]: {variable_array[-20:]}')
         if variable == "control_objective_mean":
             plt.plot(
                 iterations_array,
@@ -242,7 +225,6 @@ def plot_loss(
                 iterations_array, bar_lower, bar_upper, alpha=0.3, color=color
             )
         algorithms = algorithms + "_" + soc_solver.algorithm
-        # algorithms = algorithms + "_" + alg_list[k]
 
     plt.xlabel("Num. iterations")
     plt.ylabel(ylabel)
@@ -270,7 +252,6 @@ def main(cfg: DictConfig):
     folder_names, plots_folder_name, alg_names = get_folder_names_plots(cfg)
     file_names = get_file_names_plots(folder_names, last=True)
     print(f"file_names: {file_names}")
-    # file_names = file_names
 
     if cfg.method.setting == "molecular_dynamics":
         legend_names = [
@@ -283,29 +264,6 @@ def main(cfg: DictConfig):
             "UW-SOCM",
         ]
     else:
-        # legend_names = [
-        #     "SOCM",
-        #     "Unweighted SOCM",
-        #     "Unweighted SOCM Diagonal",
-        #     "Unweighted SOCM Diagonal 2B",
-        #     "SOCM " + r"$M_t=I$",
-        #     "SOCM-Adjoint",
-        #     "Unweighted SOCM-Adjoint",
-        #     "Adjoint",
-        #     "Cross Entropy",
-        #     "Log-Variance",
-        #     "Moment",
-        #     "Variance",
-        #     "REINFORCE",
-        #     "REINFORCE future rewards",
-        #     "SOCM-Cost",
-        #     "SOCM-Cost Diag.",
-        #     "SOCM-Cost Diag. Non-diff.",
-        #     "REINFORCE (unadjusted)",
-        #     "SOCM-Work",
-        #     "SOCM-Work Diag.",
-        #     "SOCM-Work Diag. Non-diff.",
-        # ]
         legend_names = [
             "SOCM",
             "UW-SOCM",
@@ -331,7 +289,6 @@ def main(cfg: DictConfig):
             "UW-SOCM " + r"$M_t=I$",
         ]
 
-    # plot_number = 3
     if cfg.method.plot_number == 0:
         # To show all algorithms, but UW_SOCM_diag_2B, REINFORCE (unadjusted)
         alg_list = [
@@ -563,7 +520,17 @@ def main(cfg: DictConfig):
         last_algorithm["EMA_grad_norm_sqd"] = -1
         last_algorithm["control_objective_mean"] = -1
         plot_norm_sqd_diff = False
-        title = r"Sampling from Funnel Distribution ($d=10$)"
+        title = r"Sampling Funnel Distribution ($d=10$)"
+    elif cfg.method.setting == "sampling_cox":
+        last_algorithm["EMA_grad_norm_sqd"] = -1
+        last_algorithm["control_objective_mean"] = -1
+        plot_norm_sqd_diff = False
+        title = r"Sampling Log Gaussian Cox Process ($d=1600$)"
+    elif cfg.method.setting == "sampling_MG":
+        last_algorithm["EMA_grad_norm_sqd"] = -1
+        last_algorithm["control_objective_mean"] = -1
+        plot_norm_sqd_diff = False
+        title = r"Sampling Multivariate Gaussian Distribution ($d=2$)"
 
     if cfg.method.setting == "OU_quadratic_hard" and not cfg.method.use_warm_start:
         set_ylims = True

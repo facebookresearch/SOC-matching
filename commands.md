@@ -58,3 +58,5 @@ To get the plots:
 
 ## Sampling MG
 `python main.py method.algorithm='discrete_adjoint' method.d=2 method.lmbd=1.0 method.T=5.0 method.num_steps=100 method.setting='sampling_MG' method.gamma=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.num_iterations=60000`
+
+`python plots.py method.d=2 method.T=5.0 method.num_steps=100 method.lmbd=1.0 method.setting='sampling_MG' method.gamma=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.save_every=10 method.plot_number=9`

@@ -5,11 +5,9 @@ import pandas
 import torch as th
 
 
-# pylint: disable=invalid-name, too-many-instance-attributes
 def read_points(file_path):
     print(f'cox file_path: {file_path}')
     df = pandas.read_csv(file_path)
-    # df = pandas.read_csv(file_path, error_bad_lines=False, warn_bad_lines=True)
     x_pos, y_pos = np.array(df["data_x"]), np.array(df["data_y"])
     pos = np.vstack([x_pos, y_pos]).T  # (B, 2)
     return pos

@@ -170,7 +170,6 @@ def grad_control(ts, states, sde, sigma):
             return control_learned
 
         states = states.requires_grad_(True)
-        # output = torch.autograd.grad(self.f(t, x).sum(), states)[0]
         output = torch.autograd.grad(torch.sum(control_eval(ts, states), dim=(0,1)), states)[0]
         return output
 
@@ -193,7 +192,6 @@ def grad_norm_control(ts, states, sde, sigma):
             return 0.5 * torch.sum(control_learned ** 2, dim=2)
 
         states = states.requires_grad_(True)
-        # output = torch.autograd.grad(self.f(t, x).sum(), states)[0]
         output = torch.autograd.grad(norm_control(ts, states).sum(), states)[0]
         return output
 
