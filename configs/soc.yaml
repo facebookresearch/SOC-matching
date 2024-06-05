@@ -32,6 +32,7 @@ method:
   plot_number: 1
   save_every: 1
   output_matrix: True
+  efficient_memory: False
 
 arch:
   hdims: [256, 128, 64] 

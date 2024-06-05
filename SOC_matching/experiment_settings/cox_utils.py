@@ -60,7 +60,7 @@ def get_white_from_latents(latents, const_mean, cholesky_gram):
     const_mean: scalar
     cholesky_gram: (D,D)
     """
-    print(f'latents.shape: {latents.shape}, cholesky_gram.shape: {cholesky_gram.shape}')
+    # print(f'latents.shape: {latents.shape}, cholesky_gram.shape: {cholesky_gram.shape}')
     white = th.triangular_solve(
         latents.unsqueeze(-1) - const_mean, cholesky_gram, upper=False
     ).solution  # (B,D, 1)
@@ -79,7 +79,7 @@ def poisson_process_log_likelihood(latent_function, bin_area, flat_bin_counts):
 
 
 class Cox:
-    def __init__(self, file_name, num_bins_per_dim, use_whitened):
+    def __init__(self, file_name, num_bins_per_dim, use_whitened, device):
         self.use_whitened = use_whitened
         self._num_latents = num_bins_per_dim ** 2
         self._num_grid_per_dim = num_bins_per_dim
@@ -93,7 +93,8 @@ class Cox:
         self._beta = 1.0 / 33
 
         # torch
-        self._bin_vals = th.from_numpy(get_bin_vals(num_bins_per_dim)).cuda().float()
+        # self._bin_vals = th.from_numpy(get_bin_vals(num_bins_per_dim)).cuda().float()
+        self._bin_vals = th.from_numpy(get_bin_vals(num_bins_per_dim)).to(device).float()
 
         short_kernel_func = lambda x, y: th_batch_kernel_fn(
             x, y, self._signal_variance, num_bins_per_dim, self._beta
@@ -111,7 +112,8 @@ class Cox:
 
         self._mu_zero = np.log(126.0) - 0.5 * self._signal_variance  # tensor scalar
 
-        self._flat_bin_counts = th.from_numpy(self._flat_bin_counts).cuda().float()
+        # self._flat_bin_counts = th.from_numpy(self._flat_bin_counts).cuda().float()
+        self._flat_bin_counts = th.from_numpy(self._flat_bin_counts).to(device).float()
 
         if use_whitened:
             self.evaluate_log_density = self.whitened_posterior_log_density

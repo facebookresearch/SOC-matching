@@ -317,6 +317,7 @@ def main(cfg: DictConfig):
                     u_warm_start=u_warm_start,
                     use_warm_start=cfg.method.use_warm_start,
                     use_stopping_time=cfg.method.use_stopping_time,
+                    efficient_memory=cfg.method.efficient_memory,
                 )
 
                 if compute_L2_error:

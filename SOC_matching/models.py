@@ -407,18 +407,29 @@ class TwoBoundaryScalarSigmoidMLP(torch.nn.Module):
 
     def forward(self, t, s):
         ts = torch.cat((t.unsqueeze(1), s.unsqueeze(1)), dim=1)
-        sigmoid_layers_output = self.sigmoid_layers(ts).unsqueeze(2)
+        if self.output_matrix:
+            sigmoid_layers_output = self.sigmoid_layers(ts).unsqueeze(2)
 
-        exp_denominator = 1 / (self.T - ts[:, 0])
-        # exp_denominator[-1] = 1.0
-        factor1 = torch.exp(- self.gamma3 * (ts[:, 1] - ts[:, 0]) / exp_denominator)
-        factor1 = torch.nan_to_num(factor1, nan=1.0, posinf=1.0, neginf=1.0)
+            exp_denominator = 1 / (self.T - ts[:, 0])
+            factor1 = torch.exp(- self.gamma3 * (ts[:, 1] - ts[:, 0]) / exp_denominator)
+            factor1 = torch.nan_to_num(factor1, nan=1.0, posinf=1.0, neginf=1.0)
 
-        factor2 = (1 - torch.exp(-self.gamma * (ts[:, 1] - ts[:, 0]))) * (torch.exp(-self.gamma2 * (ts[:, 1] - ts[:, 0])) - torch.exp(-self.gamma2 * (1 - ts[:, 0])))
-        identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)
+            factor2 = (1 - torch.exp(-self.gamma * (ts[:, 1] - ts[:, 0]))) * (torch.exp(-self.gamma2 * (ts[:, 1] - ts[:, 0])) - torch.exp(-self.gamma2 * (1 - ts[:, 0])))
+            identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)
 
-        output = (factor1[:,None,None] + sigmoid_layers_output * factor2[:,None,None]) * identity.repeat(ts.shape[0], 1, 1)
-        return output
+            output = (factor1[:,None,None] + sigmoid_layers_output * factor2[:,None,None]) * identity.repeat(ts.shape[0], 1, 1)
+            return output
+        else:
+            sigmoid_layers_output = self.sigmoid_layers(ts).squeeze(1)
+
+            exp_denominator = 1 / (self.T - ts[:, 0])
+            factor1 = torch.exp(- self.gamma3 * (ts[:, 1] - ts[:, 0]) / exp_denominator)
+            factor1 = torch.nan_to_num(factor1, nan=1.0, posinf=1.0, neginf=1.0)
+
+            factor2 = (1 - torch.exp(-self.gamma * (ts[:, 1] - ts[:, 0]))) * (torch.exp(-self.gamma2 * (ts[:, 1] - ts[:, 0])) - torch.exp(-self.gamma2 * (1 - ts[:, 0])))
+
+            output = factor1 + sigmoid_layers_output * factor2
+            return output
     
 class TwoBoundaryDiagonalSigmoidMLP(torch.nn.Module):
     def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, gamma2=3.0, gamma3=10.0, scaling_factor=1.0, T=1.0, output_matrix=False):
@@ -435,7 +446,7 @@ class TwoBoundaryDiagonalSigmoidMLP(torch.nn.Module):
             nn.ReLU(),
             nn.Linear(hdims[0], hdims[1]),
             nn.ReLU(),
-            nn.Linear(hdims[1], 1),
+            nn.Linear(hdims[1], dim),
         )
 
         self.scaling_factor = scaling_factor
@@ -446,41 +457,30 @@ class TwoBoundaryDiagonalSigmoidMLP(torch.nn.Module):
 
     def forward(self, t, s):
         ts = torch.cat((t.unsqueeze(1), s.unsqueeze(1)), dim=1)
-        sigmoid_layers_output = torch.diag_embed(self.sigmoid_layers(ts))
+        if self.output_matrix:
+            sigmoid_layers_output = torch.diag_embed(self.sigmoid_layers(ts))
 
-        # exp_denominator = 1 / (1 - ts[:, 0])
-        # exp_denominator[-1] = 1.0
-        # factor1 = torch.exp(- self.gamma3 * (ts[:, 1] - ts[:, 0]) / exp_denominator)
-        # print(f'self.T: {self.T}')
-        factor1 = 1 - (ts[:, 1] - ts[:, 0]) / (self.T - ts[:, 0])
-        factor1 = torch.nan_to_num(factor1, nan=1.0, posinf=1.0, neginf=1.0)
-        # print(f'torch.max(ts[:, 1]): {torch.max(ts[:, 1])}, torch.min(ts[:, 1]): {torch.min(ts[:, 1])}')
-        # print(f'torch.max(ts[:, 0]): {torch.max(ts[:, 0])}, torch.min(ts[:, 0]): {torch.min(ts[:, 0])}')
-        # print(f'torch.max(ts[:, 1] - ts[:, 0]): {torch.max(ts[:, 1] - ts[:, 0])}, torch.min(ts[:, 1] - ts[:, 0]): {torch.min(ts[:, 1] - ts[:, 0])}')
-        # print(f'torch.max((ts[:, 1] - ts[:, 0]) / (self.T + 1e-4 - ts[:, 0])): {torch.max((ts[:, 1] - ts[:, 0]) / (self.T + 1e-4 - ts[:, 0]))}, torch.min((ts[:, 1] - ts[:, 0]) / (self.T - ts[:, 0])): {torch.min((ts[:, 1] - ts[:, 0]) / (self.T - ts[:, 0]))}')
-        # print(f'torch.max(factor1): {torch.max(factor1)}, torch.min(factor1): {torch.min(factor1)}')
-        argmax_factor1 = torch.argmax(factor1)
-        argmin_factor1 = torch.argmin(factor1)
-        # print(f'torch.argmax(factor1): {torch.argmax(factor1)}, torch.argmin(factor1): {torch.argmin(factor1)}')
-        # factor1[-1] = 0.0
-        # print(f'ts[argmax_factor1, 1]: {ts[argmax_factor1, 1]}, ts[argmax_factor1, 0]: {ts[argmax_factor1, 0]}')
-        # print(f'ts[argmin_factor1, 1]: {ts[argmin_factor1, 1]}, ts[argmin_factor1, 0]: {ts[argmin_factor1, 0]}')
-        # Count the number of NaNs
-        num_nans = torch.isnan(factor1).sum().item()
-        # print(f"Number of NaNs: {num_nans}")
-        # Find positions of NaNs
-        nan_positions = torch.nonzero(torch.isnan(factor1), as_tuple=False)
-        # print(f'nan_positions: {nan_positions}, len(factor1): {len(factor1)}')
-        # print(f'factor1[1830]: {factor1[1830]}, ts[1830, 0]: {ts[1830, 0]}, ts[1830, 1]: {ts[1830, 1]}')
-        # print(f'factor1[-50:]: {factor1[-50:]}')
-        # print(f'ts[-50:, 0]: {ts[-50:, 0]}, ts[-50:, 1]: {ts[-50:, 1]}')
+            factor1 = 1 - (ts[:, 1] - ts[:, 0]) / (self.T - ts[:, 0])
+            factor1 = torch.nan_to_num(factor1, nan=1.0, posinf=1.0, neginf=1.0)
 
-        factor2 = (1 - torch.exp(-self.gamma * (ts[:, 1] - ts[:, 0]))) * (torch.exp(-self.gamma2 * (ts[:, 1] - ts[:, 0])) - torch.exp(-self.gamma2 * (1 - ts[:, 0])))
-        identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)
+            factor2 = (1 - torch.exp(-self.gamma * (ts[:, 1] - ts[:, 0]))) * (torch.exp(-self.gamma2 * (ts[:, 1] - ts[:, 0])) - torch.exp(-self.gamma2 * (1 - ts[:, 0])))
+            identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)
 
-        output = factor1[:,None,None] * identity.repeat(ts.shape[0], 1, 1) + sigmoid_layers_output * factor2[:,None,None]
-        # print(f'TwoBoundaryDiagonalSigmoidMLP torch.mean(output): {torch.mean(output)}, torch.mean(factor1): {torch.mean(factor1)}, torch.mean(sigmoid_layers_output): {torch.mean(sigmoid_layers_output)}, torch.mean(factor2): {torch.mean(factor2)}')
-        return output
+            output = factor1[:,None,None] * identity.repeat(ts.shape[0], 1, 1) + sigmoid_layers_output * factor2[:,None,None]
+            return output
+        else:
+            sigmoid_layers_output = self.sigmoid_layers(ts)
+            # print(f'sigmoid_layers_output.shape: {sigmoid_layers_output.shape}')
+
+            factor1 = 1 - (ts[:, 1] - ts[:, 0]) / (self.T - ts[:, 0])
+            factor1 = torch.nan_to_num(factor1, nan=1.0, posinf=1.0, neginf=1.0)
+            # print(f'factor1.shape: {factor1.shape}')
+            factor2 = (1 - torch.exp(-self.gamma * (ts[:, 1] - ts[:, 0]))) * (torch.exp(-self.gamma2 * (ts[:, 1] - ts[:, 0])) - torch.exp(-self.gamma2 * (1 - ts[:, 0])))
+            # print(f'factor2.shape: {factor2.shape}')
+
+            output = factor1[:,None] + sigmoid_layers_output * factor2[:,None]
+            # print(f'output.shape: {output.shape}')
+            return output
 
 
 class TwoBoundarySigmoidMLP(torch.nn.Module):
@@ -598,4 +598,100 @@ class TwoBoundarySigmoidMLP(torch.nn.Module):
         # when process is not stopped, output2 = (1 - exp(- gamma3 * (s - t))) * sigmoid_layers_output_stopped
 
         output = output1 + output2
+        return output
+    
+class PositionalEncoding(nn.Module):
+    """This is periodic in [0, 2pi]."""
+
+    def __init__(self, n_fourier_features):
+        super().__init__()
+        self.n_fourier_features = n_fourier_features
+
+    def forward(self, x):
+        # print(f'x_pe.shape: {x.shape}')
+        # print(f'torch.sin(x).shape: {torch.sin(x).shape}')
+        feature_vector = [
+            torch.sin((i + 1) * x) for i in range(self.n_fourier_features)
+        ]
+        feature_vector += [
+            torch.cos((i + 1) * x) for i in range(self.n_fourier_features)
+        ]
+        # print(f'len(feature_vector): {len(feature_vector)}')
+        # print(f'torch.cat(feature_vector, dim=-1).shape: {torch.cat(feature_vector, dim=-1).shape}')
+        return torch.cat(feature_vector, dim=-1)
+
+class DiagonalCNN(nn.Module):
+    def __init__(self, gamma=3.0, device=None):
+        super(DiagonalCNN, self).__init__()
+
+        # Set the device
+        self.device = (
+            device if device else ("cuda" if torch.cuda.is_available() else "cpu")
+        )
+        print(f'self.device: {self.device}')
+
+        self.gamma = nn.Parameter(torch.tensor([gamma]).to(self.device))
+
+        self.softplus = nn.Softplus(beta=20)
+
+        self.n_fourier_features = 4
+        self.time_embed = nn.Sequential(
+            PositionalEncoding(self.n_fourier_features),
+            nn.Linear(self.n_fourier_features * 4, 16),
+            self.softplus,
+            nn.Linear(16, 200),
+        )
+        # self.time_embed_positional = PositionalEncoding(self.n_fourier_features)
+        # self.time_embed_linear_1 = nn.Linear(self.n_fourier_features * 4, 16)
+        # self.time_embed_linear_2 = nn.Linear(16, 512)
+        
+        self.upsample = nn.Upsample(scale_factor=2, mode='nearest')
+        
+        # self.conv1 = nn.Conv2d(128, 64, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(8, 8, kernel_size=3, padding=1)
+        self.conv3 = nn.Conv2d(8, 4, kernel_size=3, padding=1)
+        self.conv4 = nn.Conv2d(4, 2, kernel_size=3, padding=1)
+        self.conv5 = nn.Conv2d(2, 1, kernel_size=3, padding=1)
+        
+    def forward(self, t, s):
+        ts = torch.cat((t.unsqueeze(1), s.unsqueeze(1)), dim=1)
+        x = ts
+
+        # Compute time embedding of x
+        x = self.time_embed(x)
+        
+        print(f'x.shape: {x.shape}')
+        # Reshape to (batch_size, 8, 5, 5)
+        x = x.view(x.size(0), 8, 5, 5)
+        
+        # Convolve to (batch_size, 8, 5, 5)
+        x = self.conv2(x)
+        x = self.softplus(x)
+        
+        # Upsample to (batch_size, 8, 10, 10)
+        x = self.upsample(x)
+        
+        # Convolve to (batch_size, 4, 10, 10)
+        x = self.conv3(x)
+        x = self.softplus(x)
+        
+        # Upsample to (batch_size, 4, 20, 20)
+        x = self.upsample(x)
+        
+        # Convolve to (batch_size, 2, 20, 20)
+        x = self.conv4(x)
+        x = self.softplus(x)
+        
+        # Upsample to (batch_size, 2, 40, 40)
+        x = self.upsample(x)
+        
+        # Convolve to (batch_size, 1, 40, 40)
+        x = self.conv5(x)
+        x = self.softplus(x)
+
+        x = x.view(x.size(0), 1600)
+
+        exp_factor = torch.exp(self.gamma * (s - t))[:, None, None, None]
+
+        output = (1 / exp_factor) + 0.1 * (1 - 1 / exp_factor) * x
         return output

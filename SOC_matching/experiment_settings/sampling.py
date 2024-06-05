@@ -54,7 +54,7 @@ class Sampler(method.NeuralSDE):
         self.setting = setting
         if self.setting == "sampling_cox":
             fcsv = osp.join(pathlib.Path(__file__).parent.resolve(), "df_pines.csv")
-            self.cox = Cox(fcsv, 40, use_whitened=False)
+            self.cox = Cox(fcsv, 40, use_whitened=False, device=self.device)
 
         elif self.setting == "sampling_funnel":
             self.dist_dominant = D.Normal(torch.tensor([0.0]).to(self.device), torch.tensor([1.0]).to(self.device))

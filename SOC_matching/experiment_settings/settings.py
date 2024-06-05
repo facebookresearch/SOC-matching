@@ -236,7 +236,7 @@ def define_neural_sde(cfg, ts, x0, u_warm_start, **kwargs):
             scaling_factor_M=cfg.method.scaling_factor_M,
             output_matrix=cfg.method.output_matrix,
         )
-    neural_sde.initialize_models(cfg.method.algorithm)
+    neural_sde.initialize_models(cfg.method.algorithm, cfg.method.setting)
     return neural_sde
 
 
