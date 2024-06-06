@@ -622,33 +622,56 @@ class SOC_Solver(nn.Module):
                 t_vector,
                 s_vector,
             )
-            derivative_M_evals_all = derivative_M(
-                t_vector,
-                s_vector,
-            )
+            # derivative_M_evals_all = derivative_M(
+            #     t_vector,
+            #     s_vector,
+            # )
+            # print(f'M_evals_all.shape: {M_evals_all.shape}, derivative_M_evals_all.shape: {derivative_M_evals_all.shape}')
+            # print(f't_vector.shape: {t_vector.shape}, s_vector.shape: {s_vector.shape}')
             counter = 0
             for k, t in enumerate(self.ts):
                 if diagonal_M:
                     M_evals[k, k:, :] = M_evals_all[
                         counter : (counter + self.num_steps + 1 - k), :
                     ]
-                    derivative_M_evals[k, k:, :] = derivative_M_evals_all[
-                        counter : (counter + self.num_steps + 1 - k), :
-                    ]
+                    # derivative_M_evals[k, k:, :] = derivative_M_evals_all[
+                    #     counter : (counter + self.num_steps + 1 - k), :
+                    # ]
+                    derivative_M_evals[k, k:-1, :] = (M_evals_all[
+                        counter + 1 : (counter + self.num_steps + 1 - k), :
+                    ] - M_evals_all[
+                        counter : (counter + self.num_steps - k), :
+                    ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])[:,None]
                 elif scalar_M:
                     M_evals[k, k:] = M_evals_all[
                         counter : (counter + self.num_steps + 1 - k)
                     ]
-                    derivative_M_evals[k, k:] = derivative_M_evals_all[
-                        counter : (counter + self.num_steps + 1 - k)
-                    ]
+                    # derivative_M_evals[k, k:] = derivative_M_evals_all[
+                    #     counter : (counter + self.num_steps + 1 - k)
+                    # ]
+                    derivative_M_evals[k, k:-1] = (M_evals_all[
+                        counter + 1 : (counter + self.num_steps + 1 - k)
+                    ] - M_evals_all[
+                        counter : (counter + self.num_steps - k)
+                    ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])
                 else:
                     M_evals[k, k:, :, :] = M_evals_all[
                         counter : (counter + self.num_steps + 1 - k), :, :
                     ]
-                    derivative_M_evals[k, k:, :, :] = derivative_M_evals_all[
-                        counter : (counter + self.num_steps + 1 - k), :, :
-                    ]
+                    # derivative_M_evals[k, k:, :, :] = derivative_M_evals_all[
+                    #     counter : (counter + self.num_steps + 1 - k), :, :
+                    # ]
+                    # original_quantity = derivative_M_evals_all[
+                    #     counter : (counter + self.num_steps - k), :, :
+                    # ]
+                    derivative_M_evals[k, k:-1, :, :] = (M_evals_all[
+                        counter + 1 : (counter + self.num_steps + 1 - k), :, :
+                    ] - M_evals_all[
+                        counter : (counter + self.num_steps - k), :, :
+                    ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])[:,None,None]
+                    # print(f'original_quantity.shape: {original_quantity.shape}, derivative_M_evals[k, k:-1, :, :].shape: {derivative_M_evals[k, k:-1, :, :].shape}')
+                    # print(f'torch.norm(original_quantity - derivative_M_evals[k, k:-1, :, :]): {torch.norm(original_quantity - derivative_M_evals[k, k:-1, :, :])}')
+                    # print(f'torch.norm(derivative_M_evals[k, k:-1, :, :]): {torch.norm(derivative_M_evals[k, k:-1, :, :])}')
                 counter += self.num_steps + 1 - k
 
             # Compute terms corresponding to state and terminal costs
