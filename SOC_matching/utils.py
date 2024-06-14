@@ -394,7 +394,8 @@ def get_folder_names_plots(cfg):
             "SOCM_work_diag_2B",
             "UW_SOCM_identity",
             "UW_SOCM_no_v",
-            "UW_SOCM_no_nabla_b_term"
+            "UW_SOCM_no_nabla_b_term",
+            "UW_SOCM_no_noise"
         ]
     for k, algorithm in enumerate(algorithms):
         folder_name = (
