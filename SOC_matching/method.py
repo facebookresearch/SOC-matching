@@ -1099,7 +1099,7 @@ class SOC_Solver(nn.Module):
                         * weight.unsqueeze(0).unsqueeze(2)
                     ) / (states.shape[0] * states.shape[1])
 
-        if algorithm == "SOCM_adjoint" or algorithm == "work_adjoint":
+        if algorithm == "SOCM_adjoint" or algorithm == "work_adjoint" or algorithm == "work_adjoint_STL":
             nabla_f_evals = self.neural_sde.nabla_f(self.ts, states)
             nabla_b_evals = self.neural_sde.nabla_b(self.ts, states)
             nabla_g_evals = self.neural_sde.nabla_g(states[-1, :, :])
@@ -1108,8 +1108,34 @@ class SOC_Solver(nn.Module):
             a = nabla_g_evals
             a_vectors[-1, :, :] = a
 
+            def inner_prod_STL(t, k, states, vector):
+                state = states[k,:,:]
+                t_repeat = t * torch.ones(state.shape[0]).to(state.device).unsqueeze(1)
+                tx = torch.cat([t_repeat, state], dim=-1)
+                nabla_V_autograd = self.neural_sde.nabla_V(tx)
+                learned_control = -torch.einsum(
+                    "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V_autograd
+                )
+                # sigma_learned_control = torch.einsum(
+                #     "ij,...j->...i", self.sigma, learned_control
+                # )
+                output = torch.sum(learned_control * vector, dim=1)
+                return output
+
             for k in range(1,len(self.ts)):
-                a += self.dt * ((nabla_f_evals[-1-k, :, :] + nabla_f_evals[-k, :, :]) / 2 + torch.einsum("mkl,ml->mk", (nabla_b_evals[-1-k, :, :, :] + nabla_b_evals[-k, :, :, :]) / 2, a))
+                # a += self.dt * ((nabla_f_evals[-1-k, :, :] + nabla_f_evals[-k, :, :]) / 2 + torch.einsum("mkl,ml->mk", (nabla_b_evals[-1-k, :, :, :] + nabla_b_evals[-k, :, :, :]) / 2, a))
+                a += self.dt * (nabla_f_evals[-1-k, :, :] + torch.einsum("mkl,ml->mk", nabla_b_evals[-1-k, :, :, :], a))
+
+                if algorithm == "work_adjoint_STL":
+                    # print(f'states.shape: {states.shape}, noises.shape: {noises.shape}')
+                    # Check if states requires grad
+                    if not states.requires_grad:
+                        states.requires_grad = True
+                    STL_term = torch.autograd.grad(inner_prod_STL(self.ts[-1-k], -1-k, states, noises[-k,:,:]).sum(), states, allow_unused=True)[0][-1-k,:,:]
+                    states.requires_grad = False
+                    # print(f'a.shape: {a.shape}, STL_term.shape: {STL_term.shape}')
+                    a += np.sqrt(self.dt * self.lmbd) * STL_term
+
                 a_vectors[-1-k, :, :] = a
 
             control_learned = -torch.einsum(
@@ -1664,7 +1690,7 @@ class SOC_Solver(nn.Module):
                 objective = torch.mean(sum_terms**2 * weight_2)
 
         # if algorithm == "SOCM_plus" or algorithm == "work_SOCM_plus":
-        elif algorithm == "continuous_adjoint":
+        elif algorithm == "continuous_adjoint" or algorithm == "continuous_adjoint_STL":
             nabla_norm_control = utils.grad_norm_control(self.ts, states, self.neural_sde, self.sigma)
             nabla_f_evals = self.neural_sde.nabla_f(self.ts, states) + nabla_norm_control
             nabla_g_evals = self.neural_sde.nabla_g(states[-1, :, :])
@@ -1674,7 +1700,7 @@ class SOC_Solver(nn.Module):
             a_vectors[-1, :, :] = a
             
             def inner_prod(t, k, states, vector):
-                state = states[-1-k,:,:]
+                state = states[k,:,:]
                 t_repeat = t * torch.ones(state.shape[0]).to(state.device).unsqueeze(1)
                 tx = torch.cat([t_repeat, state], dim=-1)
                 nabla_V_autograd = self.neural_sde.nabla_V(tx)
@@ -1686,14 +1712,39 @@ class SOC_Solver(nn.Module):
                 )
                 output = torch.sum((self.neural_sde.b(t, state) + sigma_learned_control) * vector, dim=1)
                 return output
+
+            def inner_prod_STL(t, k, states, vector):
+                state = states[k,:,:]
+                t_repeat = t * torch.ones(state.shape[0]).to(state.device).unsqueeze(1)
+                tx = torch.cat([t_repeat, state], dim=-1)
+                nabla_V_autograd = self.neural_sde.nabla_V(tx)
+                learned_control = -torch.einsum(
+                    "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V_autograd
+                )
+                # sigma_learned_control = torch.einsum(
+                #     "ij,...j->...i", self.sigma, learned_control
+                # )
+                output = torch.sum(learned_control * vector, dim=1)
+                return output
             
             for k in range(1,len(self.ts)):
                 if not states.requires_grad:
                     states.requires_grad = True
-                nabla_b_prod_a = torch.autograd.grad(inner_prod(self.ts[k], k, states, a).sum(), states, allow_unused=True)[0][-1-k,:,:]
+                nabla_b_prod_a = torch.autograd.grad(inner_prod(self.ts[-1-k], -1-k, states, a).sum(), states, allow_unused=True)[0][-1-k,:,:]
                 states.requires_grad = False
                 
                 a += self.dt * (nabla_f_evals[-1-k, :, :] + nabla_b_prod_a).detach()
+
+                if algorithm == "continuous_adjoint_STL":
+                    # print(f'states.shape: {states.shape}, noises.shape: {noises.shape}')
+                    # Check if states requires grad
+                    if not states.requires_grad:
+                        states.requires_grad = True
+                    STL_term = torch.autograd.grad(inner_prod_STL(self.ts[-1-k], -1-k, states, noises[-k,:,:]).sum(), states, allow_unused=True)[0][-1-k,:,:]
+                    states.requires_grad = False
+                    # print(f'a.shape: {a.shape}, STL_term.shape: {STL_term.shape}')
+                    a += np.sqrt(self.dt * self.lmbd) * STL_term
+
                 a_vectors[-1-k, :, :] = a
 
             control_learned = -torch.einsum(
