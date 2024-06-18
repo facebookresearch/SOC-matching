@@ -95,7 +95,7 @@ def plot_loss(
 
     plt.figure()
 
-    # alg_list = ['SOCM','UW_SOCM','UW_SOCM_sc','UW_SOCM_sc_2B','SOCM_const_M','SOCM_adjoint','continuous_adjoint',
+    # alg_list = ['SOCM','UW_SOCM','UW_SOCM_sc','UW_SOCM_sc_2B','SOCM_const_M','SOCM_adjoint','work_adjoint',
     #             'discrete_adjoint','cross_entropy','log-variance','moment','variance','reinf','reinf_fr',
     #             'SOCM_cost','SOCM_cost_sc','SOCM_cost_sc_2B','reinf']
 
@@ -297,7 +297,7 @@ def main(cfg: DictConfig):
             "UW_SOCM_diag",
             "SOCM_const_M",
             "SOCM_adjoint",
-            "continuous_adjoint",
+            "work_adjoint",
             "discrete_adjoint",
             "cross_entropy",
             "log-variance",
@@ -319,7 +319,7 @@ def main(cfg: DictConfig):
             "UW_SOCM",
             "UW_SOCM_diag",
             "SOCM_adjoint",
-            "continuous_adjoint",
+            "work_adjoint",
             "discrete_adjoint",
             "cross_entropy",
             "log-variance",
@@ -339,7 +339,7 @@ def main(cfg: DictConfig):
         # alg_list = [
         #     "UW_SOCM",
         #     "UW_SOCM_diag",
-        #     "continuous_adjoint",
+        #     "work_adjoint",
         #     "discrete_adjoint",
         #     "log-variance",
         #     "moment",
@@ -354,7 +354,7 @@ def main(cfg: DictConfig):
         # ]
         alg_list = [
             "UW_SOCM",
-            "continuous_adjoint",
+            "work_adjoint",
             "discrete_adjoint",
             "cross_entropy",
             "log-variance",
@@ -371,12 +371,12 @@ def main(cfg: DictConfig):
             "UW_SOCM_diag",
             "UW_SOCM_identity",
             # "UW_SOCM_diag_2B",
-            # "continuous_adjoint",
+            # "work_adjoint",
         ]
     elif cfg.method.plot_number == 4:
         #To show all REINFORCE-like algorithms
         alg_list = [
-            "continuous_adjoint",
+            "work_adjoint",
             "discrete_adjoint",
             "reinf",
             "reinf_fr",
@@ -426,7 +426,7 @@ def main(cfg: DictConfig):
             "SOCM",
             "UW_SOCM",
             "SOCM_adjoint",
-            "continuous_adjoint",
+            "work_adjoint",
             "discrete_adjoint",
             "cross_entropy",
             "log-variance",

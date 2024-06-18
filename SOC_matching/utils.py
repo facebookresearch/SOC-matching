@@ -377,6 +377,7 @@ def get_folder_names_plots(cfg):
             "UW_SOCM_diag_2B",
             "SOCM_const_M",
             "SOCM_adjoint",
+            "work_adjoint",
             "continuous_adjoint",
             "discrete_adjoint",
             "cross_entropy",

@@ -1099,7 +1099,7 @@ class SOC_Solver(nn.Module):
                         * weight.unsqueeze(0).unsqueeze(2)
                     ) / (states.shape[0] * states.shape[1])
 
-        if algorithm == "SOCM_adjoint" or algorithm == "continuous_adjoint":
+        if algorithm == "SOCM_adjoint" or algorithm == "work_adjoint":
             nabla_f_evals = self.neural_sde.nabla_f(self.ts, states)
             nabla_b_evals = self.neural_sde.nabla_b(self.ts, states)
             nabla_g_evals = self.neural_sde.nabla_g(states[-1, :, :])
@@ -1212,24 +1212,7 @@ class SOC_Solver(nn.Module):
             identity = torch.eye(d).to(self.x0.device)
             dts = self.ts[1:] - self.ts[:-1]
 
-            # sum_M = lambda t, s: self.neural_sde.M(t, s).sum(dim=0)
-
-            # derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
-            # derivative_M = lambda t, s: torch.transpose(
-            #     torch.transpose(derivative_M_0(t, s), 1, 2), 0, 1
-            # )
-
-            # M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
-            #     self.ts.device
-            # )
-            # derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
-            #     self.ts.device
-            # )
-
             if diagonal_M:
-                # derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
-                # derivative_M = lambda t, s: torch.transpose(derivative_M_0(t, s), 0, 1)
-
                 M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
                     self.ts.device
                 )
@@ -1238,9 +1221,6 @@ class SOC_Solver(nn.Module):
                 )
 
             elif scalar_M:
-                # derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
-                # derivative_M = lambda t, s: derivative_M_0(t, s)
-
                 M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
                     self.ts.device
                 )
@@ -1249,11 +1229,6 @@ class SOC_Solver(nn.Module):
                 )
 
             else:
-                # derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
-                # derivative_M = lambda t, s: torch.transpose(
-                #     torch.transpose(derivative_M_0(t, s), 1, 2), 0, 1
-                # )
-
                 M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
                     self.ts.device
                 )
@@ -1281,18 +1256,9 @@ class SOC_Solver(nn.Module):
                 t_vector,
                 s_vector,
             )
-            # derivative_M_evals_all = derivative_M(
-            #     t_vector,
-            #     s_vector,
-            # )
+
             counter = 0
             for k, t in enumerate(self.ts):
-                # M_evals[k, k:, :, :] = M_evals_all[
-                #     counter : (counter + self.num_steps + 1 - k), :, :
-                # ]
-                # derivative_M_evals[k, k:, :, :] = derivative_M_evals_all[
-                #     counter : (counter + self.num_steps + 1 - k), :, :
-                # ]
                 if diagonal_M:
                     M_evals[k, k:, :] = M_evals_all[
                         counter : (counter + self.num_steps + 1 - k), :
@@ -1353,30 +1319,6 @@ class SOC_Solver(nn.Module):
             cumsum_least_squares_term_1 = torch.sum(
                 least_squares_target_integrand_term_1_times_dt, dim=1
             )
-
-            # nabla_norm_control = utils.grad_norm_control(self.ts, states, self.neural_sde, self.sigma)
-
-            # least_squares_target_integrand_term_1 = torch.einsum(
-            #     "ijkl,jml->ijmk",
-            #     M_evals,
-            #     self.neural_sde.nabla_f(self.ts, states) + nabla_norm_control,
-            # )[:, :-1, :, :]
-
-            # least_squares_target_integrand_term_1_times_dt = (
-            #     least_squares_target_integrand_term_1
-            #     * dts.unsqueeze(1).unsqueeze(2).unsqueeze(0)
-            # )
-
-            # cumsum_least_squares_term_1 = torch.sum(
-            #     least_squares_target_integrand_term_1_times_dt, dim=1
-            # )
-
-            # M_evals_final = M_evals[:, -1, :, :]
-            # least_squares_target_terminal = torch.einsum(
-            #     "ikl,ml->imk",
-            #     M_evals_final,
-            #     self.neural_sde.nabla_g(states[-1, :, :]),
-            # )
 
             def control_autograd_arg(ts, states):
                 ts_repeat = ts.unsqueeze(1).unsqueeze(2).repeat(1, states.shape[1], 1)
@@ -1439,28 +1381,6 @@ class SOC_Solver(nn.Module):
                 least_squares_target_integrand_term_2_3_times_sqrt_dt, dim=1
             )
 
-            # least_squares_target_integrand_term_2 = -torch.einsum(
-            #     "ijkl,jml->ijmk",
-            #     M_evals[:,:-1,:,:],
-            #     nabla_control_noise[:-1,:,:],
-            # )
-
-            # least_squares_target_integrand_term_3 = torch.einsum(
-            #     "ijkl,jml->ijmk",
-            #     derivative_M_evals[:,:-1,:,:],
-            #     torch.einsum("ij,abj->abi", sigma_inverse_transpose, noises)
-            # )
-
-            # least_squares_target_integrand_term_2_3_times_sqrt_dt = (
-            #     (least_squares_target_integrand_term_2
-            #      + least_squares_target_integrand_term_3)
-            #     * torch.sqrt(dts).unsqueeze(1).unsqueeze(2)
-            # )
-
-            # cumsum_least_squares_term_2_3 = torch.sum(
-            #     least_squares_target_integrand_term_2_3_times_sqrt_dt, dim=1
-            # )
-
             reward = - np.sqrt(self.lmbd) * (
                 log_path_weight_deterministic_tensor[-1,:].unsqueeze(0) - log_path_weight_deterministic_tensor
                 + log_terminal_weight.unsqueeze(0)
@@ -1497,24 +1417,7 @@ class SOC_Solver(nn.Module):
             identity = torch.eye(d).to(self.x0.device)
             dts = self.ts[1:] - self.ts[:-1]
 
-            # sum_M = lambda t, s: self.neural_sde.M(t, s).sum(dim=0)
-
-            # derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
-            # derivative_M = lambda t, s: torch.transpose(
-            #     torch.transpose(derivative_M_0(t, s), 1, 2), 0, 1
-            # )
-
-            # M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
-            #     self.ts.device
-            # )
-            # derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
-            #     self.ts.device
-            # )
-
             if diagonal_M:
-                # derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
-                # derivative_M = lambda t, s: torch.transpose(derivative_M_0(t, s), 0, 1)
-
                 M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
                     self.ts.device
                 )
@@ -1523,9 +1426,6 @@ class SOC_Solver(nn.Module):
                 )
 
             elif scalar_M:
-                # derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
-                # derivative_M = lambda t, s: derivative_M_0(t, s)
-
                 M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
                     self.ts.device
                 )
@@ -1534,11 +1434,6 @@ class SOC_Solver(nn.Module):
                 )
 
             else:
-                # derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
-                # derivative_M = lambda t, s: torch.transpose(
-                #     torch.transpose(derivative_M_0(t, s), 1, 2), 0, 1
-                # )
-
                 M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
                     self.ts.device
                 )
@@ -1566,18 +1461,8 @@ class SOC_Solver(nn.Module):
                 t_vector,
                 s_vector,
             )
-            # derivative_M_evals_all = derivative_M(
-            #     t_vector,
-            #     s_vector,
-            # )
             counter = 0
             for k, t in enumerate(self.ts):
-                # M_evals[k, k:, :, :] = M_evals_all[
-                #     counter : (counter + self.num_steps + 1 - k), :, :
-                # ]
-                # derivative_M_evals[k, k:, :, :] = derivative_M_evals_all[
-                #     counter : (counter + self.num_steps + 1 - k), :, :
-                # ]
                 if diagonal_M:
                     M_evals[k, k:, :] = M_evals_all[
                         counter : (counter + self.num_steps + 1 - k), :
@@ -1606,11 +1491,6 @@ class SOC_Solver(nn.Module):
                         counter : (counter + self.num_steps - k), :, :
                     ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])[:,None,None]
                 counter += self.num_steps + 1 - k
-
-            # if algorithm == 'SOCM_work_identity_2B':
-            #     M_evals[:, -1, :, :] = 0
-
-            # nabla_norm_control = utils.grad_norm_control(self.ts, states, self.neural_sde, self.sigma)
 
             # Compute terms corresponding to state and terminal costs
             if diagonal_M:
@@ -1642,28 +1522,6 @@ class SOC_Solver(nn.Module):
             cumsum_least_squares_term_1 = torch.sum(
                 least_squares_target_integrand_term_1_times_dt, dim=1
             )
-
-            # least_squares_target_integrand_term_1 = torch.einsum(
-            #     "ijkl,jml->ijmk",
-            #     M_evals,
-            #     self.neural_sde.nabla_f(self.ts, states), #+ nabla_norm_control,
-            # )[:, :-1, :, :]
-
-            # least_squares_target_integrand_term_1_times_dt = (
-            #     least_squares_target_integrand_term_1
-            #     * dts.unsqueeze(1).unsqueeze(2).unsqueeze(0)
-            # )
-
-            # cumsum_least_squares_term_1 = torch.sum(
-            #     least_squares_target_integrand_term_1_times_dt, dim=1
-            # )
-
-            # M_evals_final = M_evals[:, -1, :, :]
-            # least_squares_target_terminal = torch.einsum(
-            #     "ikl,ml->imk",
-            #     M_evals_final,
-            #     self.neural_sde.nabla_g(states[-1, :, :]),
-            # )
 
             def control_autograd_arg(ts, states):
                 output = torch.sum((self.neural_sde.b(self.ts, states) 
@@ -1711,28 +1569,6 @@ class SOC_Solver(nn.Module):
             cumsum_least_squares_term_2_3 = torch.sum(
                 least_squares_target_integrand_term_2_3_times_sqrt_dt, dim=1
             )
-
-            # least_squares_target_integrand_term_2 = -torch.einsum(
-            #     "ijkl,jml->ijmk",
-            #     M_evals[:,:-1,:,:],
-            #     nabla_control_noise[:-1,:,:],
-            # )
-
-            # least_squares_target_integrand_term_3 = torch.einsum(
-            #     "ijkl,jml->ijmk",
-            #     derivative_M_evals[:,:-1,:,:],
-            #     torch.einsum("ij,abj->abi", sigma_inverse_transpose, noises)
-            # )
-
-            # least_squares_target_integrand_term_2_3_times_sqrt_dt = (
-            #     (least_squares_target_integrand_term_2
-            #      + least_squares_target_integrand_term_3)
-            #     * torch.sqrt(dts).unsqueeze(1).unsqueeze(2)
-            # )
-
-            # cumsum_least_squares_term_2_3 = torch.sum(
-            #     least_squares_target_integrand_term_2_3_times_sqrt_dt, dim=1
-            # )
 
             reward = - np.sqrt(self.lmbd) * (
                 log_path_weight_f_tensor[-1,:].unsqueeze(0) - log_path_weight_f_tensor
@@ -1826,6 +1662,51 @@ class SOC_Solver(nn.Module):
                 )
             elif algorithm == "moment":
                 objective = torch.mean(sum_terms**2 * weight_2)
+
+        # if algorithm == "SOCM_plus" or algorithm == "work_SOCM_plus":
+        elif algorithm == "continuous_adjoint":
+            nabla_norm_control = utils.grad_norm_control(self.ts, states, self.neural_sde, self.sigma)
+            nabla_f_evals = self.neural_sde.nabla_f(self.ts, states) + nabla_norm_control
+            nabla_g_evals = self.neural_sde.nabla_g(states[-1, :, :])
+
+            a_vectors = torch.zeros_like(states)
+            a = nabla_g_evals.detach()
+            a_vectors[-1, :, :] = a
+            
+            def inner_prod(t, k, states, vector):
+                state = states[-1-k,:,:]
+                t_repeat = t * torch.ones(state.shape[0]).to(state.device).unsqueeze(1)
+                tx = torch.cat([t_repeat, state], dim=-1)
+                nabla_V_autograd = self.neural_sde.nabla_V(tx)
+                learned_control = -torch.einsum(
+                    "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V_autograd
+                )
+                sigma_learned_control = torch.einsum(
+                    "ij,...j->...i", self.sigma, learned_control
+                )
+                output = torch.sum((self.neural_sde.b(t, state) + sigma_learned_control) * vector, dim=1)
+                return output
+            
+            for k in range(1,len(self.ts)):
+                if not states.requires_grad:
+                    states.requires_grad = True
+                nabla_b_prod_a = torch.autograd.grad(inner_prod(self.ts[k], k, states, a).sum(), states, allow_unused=True)[0][-1-k,:,:]
+                states.requires_grad = False
+                
+                a += self.dt * (nabla_f_evals[-1-k, :, :] + nabla_b_prod_a).detach()
+                a_vectors[-1-k, :, :] = a
+
+            control_learned = -torch.einsum(
+                    "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
+                )
+            control_target = -torch.einsum(
+                "ij,...j->...i",
+                torch.transpose(self.sigma, 0, 1),
+                a_vectors,
+            )
+            objective = torch.sum(
+                (control_learned - control_target) ** 2
+            ) / (states.shape[0] * states.shape[1])
 
         if compute_L2_error:
             if algorithm == "discrete_adjoint":
