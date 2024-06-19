@@ -126,7 +126,9 @@ def plot_loss(
         ylabel = "Control " + r"$L^2$" + " error (EMA)"
 
     num_plots = len(soc_solver_list)
+    print(f'num_plots: {num_plots}')
     cmap_values = np.linspace(0, 1, num=num_plots)
+    print(f'cmap_values: {cmap_values}')
     alg_numbers = torch.arange(len(soc_solver_list)) if cfg.method.plot_number in [5,8] else alg_numbers
     for k, soc_solver in enumerate(soc_solver_list):
         algorithm = soc_solver.algorithm
@@ -137,7 +139,12 @@ def plot_loss(
             else:
                 color = colors_cmap[k]
         else:
-            color = cmap(cmap_values[alg_numbers[k]])
+            print(f'k: {k}, alg_numbers[k]: {alg_numbers[k]}')
+            # print(f'cmap_values[alg_numbers[k]]: {cmap_values[alg_numbers[k]]}')
+            # color = cmap(cmap_values[alg_numbers[k]])
+            # color = cmap(alg_numbers[k])
+            color = cmap(k)
+
 
         print(
             f"variable: {variable}, algorithm: {algorithm}, plots_folder_name: {plots_folder_name}"
@@ -240,7 +247,8 @@ def plot_loss(
     plt.tight_layout()
 
     if save_figure:
-        figure_name = plots_folder_name + "/" + variable + algorithms + ".png"
+        # figure_name = plots_folder_name + "/" + variable + algorithms + ".png"
+        figure_name = plots_folder_name + "/" + variable + '_' + str(cfg.method.plot_number) + ".png"
         print(f"Figure saved at {figure_name}")
         plt.savefig(figure_name, bbox_inches="tight", pad_inches=0)
 
@@ -253,41 +261,81 @@ def main(cfg: DictConfig):
     file_names = get_file_names_plots(folder_names, last=True)
     print(f"file_names: {file_names}")
 
-    if cfg.method.setting == "molecular_dynamics":
-        legend_names = [
-            "SOCM (ours)",
-            "Adjoint",
-            "Cross Entropy",
-            "Log-Variance",
-            "Moment",
-            "Variance",
-            "UW-SOCM",
-        ]
-    else:
-        legend_names = [
-            "SOCM",
-            "UW-SOCM",
-            "UW-SOCM Diag.",
-            "UW-SOCM Diag. " + r"$M_t(T)=0$",
-            "SOCM " + r"$M_t=I$",
-            "SOCM-Adj",
-            "Cont. Adjoint",
-            "Disc. Adjoint",
-            "Cross Entropy",
-            "Log-Variance",
-            "Moment",
-            "Variance",
-            "REINFORCE",
-            "REINFORCE-FR",
-            "SOCM-Cost",
-            "SOCM-Cost Diag.",
-            "SOCM-Cost Diag. " + r"$M_t(T)=0$",
-            "REINFORCE (unadjusted)",
-            "SOCM-Work",
-            "SOCM-Work Diag.",
-            "SOCM-Work Diag. " + r"$M_t(T)=0$",
-            "UW-SOCM " + r"$M_t=I$",
-        ]
+    # if cfg.method.setting == "molecular_dynamics":
+    #     legend_names = [
+    #         "SOCM (ours)",
+    #         "Adjoint",
+    #         "Cross Entropy",
+    #         "Log-Variance",
+    #         "Moment",
+    #         "Variance",
+    #         "UW-SOCM",
+    #     ]
+    # else:
+        # legend_names = [
+        #     "SOCM",
+        #     "UW-SOCM",
+        #     "UW-SOCM Diag.",
+        #     "UW-SOCM Diag. " + r"$M_t(T)=0$",
+        #     "SOCM " + r"$M_t=I$",
+        #     "SOCM-Adj",
+        #     "Cont. Adjoint",
+        #     "Disc. Adjoint",
+        #     "Cross Entropy",
+        #     "Log-Variance",
+        #     "Moment",
+        #     "Variance",
+        #     "REINFORCE",
+        #     "REINFORCE-FR",
+        #     "SOCM-Cost",
+        #     "SOCM-Cost Diag.",
+        #     "SOCM-Cost Diag. " + r"$M_t(T)=0$",
+        #     "REINFORCE (unadjusted)",
+        #     "SOCM-Work",
+        #     "SOCM-Work Diag.",
+        #     "SOCM-Work Diag. " + r"$M_t(T)=0$",
+        #     "UW-SOCM " + r"$M_t=I$",
+        # ]
+    legend_names = {
+        "SOCM": "SOCM",
+        "UW_SOCM": "UW-SOCM",
+        "SOCM_identity": "SOCM " + r"$M_t=I$",
+        "UW_SOCM_identity": "UW-SOCM " + r"$M_t=I$",
+        "SOCM_diag": "SOCM Diag.",
+        "UW_SOCM_diag": "UW-SOCM Diag.",
+        "SOCM_diag_2B": "SOCM Diag. " + r"$M_t(T)=0$",
+        "UW_SOCM_diag_2B": "UW-SOCM Diag. " + r"$M_t(T)=0$",
+        "SOCM_sc": "SOCM Scalar",
+        "UW_SOCM_sc": "UW-SOCM Scalar",
+        "SOCM_sc_2B": "SOCM Scalar " + r"$M_t(T)=0$",
+        "UW_SOCM_sc_2B": "UW-SOCM Scalar " + r"$M_t(T)=0$",
+        "SOCM_adjoint": "SOCM-Adjoint",
+        "work_adjoint": "Work Adjoint",
+        "work_adjoint_STL": "Work Adjoint STL",
+        "continuous_adjoint": "Cont. Adjoint",
+        "continuous_adjoint_STL": "Cont. Adjoint STL",
+        "discrete_adjoint": "Disc. Adjoint",
+        "discrete_adjoint_STL": "Disc. Adjoint STL",
+        "cross_entropy": "Cross Entropy",
+        "log-variance": "Log-Variance",
+        "moment": "Moment",
+        "variance": "Variance",
+        "reinf": "REINFORCE",
+        "reinf_fr": "REINFORCE-FR",
+        "SOCM_cost": "SOCM-Cost",
+        "SOCM_cost_STL": "SOCM-Cost STL",
+        "SOCM_cost_diag": "SOCM-Cost Diag.",
+        "SOCM_cost_diag_STL": "SOCM-Cost Diag. STL",
+        "SOCM_cost_diag_2B": "SOCM-Cost Diag. " + r"$M_t(T)=0$",
+        "SOCM_cost_diag_2B_STL": "SOCM-Cost Diag. " + r"$M_t(T)=0$" + " STL",
+        "reinf_unadj": "REINFORCE (unadjusted)",
+        "SOCM_work": "SOCM-Work",
+        "SOCM_work_STL": "SOCM-Work STL",
+        "SOCM_work_diag": "SOCM-Work Diag.",
+        "SOCM_work_diag_STL": "SOCM-Work Diag. STL",
+        "SOCM_work_diag_2B": "SOCM-Work Diag. " + r"$M_t(T)=0$",
+        "SOCM_work_diag_2B_STL": "SOCM-Work Diag. " + r"$M_t(T)=0$" + " STL",
+    }
 
     if cfg.method.plot_number == 0:
         # To show all algorithms, but UW_SOCM_diag_2B, REINFORCE (unadjusted)
@@ -375,17 +423,39 @@ def main(cfg: DictConfig):
         ]
     elif cfg.method.plot_number == 4:
         #To show all REINFORCE-like algorithms
+        # alg_list = [
+        #     "work_adjoint",
+        #     "discrete_adjoint",
+        #     "reinf",
+        #     "reinf_fr",
+        #     "SOCM_cost",
+        #     "SOCM_cost_diag",
+        #     "SOCM_cost_diag_2B",
+        #     "SOCM_work",
+        #     "SOCM_work_diag",
+        #     "SOCM_work_diag_2B",
+        # ]
         alg_list = [
             "work_adjoint",
+            "work_adjoint_STL",
+            "continuous_adjoint",
+            "continuous_adjoint_STL",
             "discrete_adjoint",
+            "discrete_adjoint_STL",
             "reinf",
             "reinf_fr",
             "SOCM_cost",
+            "SOCM_cost_STL",
             "SOCM_cost_diag",
-            "SOCM_cost_diag_2B",
+            # "SOCM_cost_diag_STL",
+            # "SOCM_cost_diag_2B",
+            "SOCM_cost_diag_2B_STL",
             "SOCM_work",
+            "SOCM_work_STL",
             "SOCM_work_diag",
+            "SOCM_work_diag_STL",
             "SOCM_work_diag_2B",
+            "SOCM_work_diag_2B_STL",
         ]
     elif cfg.method.plot_number == 5:
         #To show all algorithms in the SOCM paper
@@ -422,20 +492,36 @@ def main(cfg: DictConfig):
         ]
     elif cfg.method.plot_number == 9:
         # To show all algorithms but UW_SOCM_diag_2B, SOCM_const_M, REINFORCE (unadjusted)
+        # alg_list = [
+        #     "SOCM",
+        #     "UW_SOCM",
+        #     "SOCM_adjoint",
+        #     "work_adjoint",
+        #     "discrete_adjoint",
+        #     "cross_entropy",
+        #     "log-variance",
+        #     "moment",
+        #     "variance",
+        #     "reinf",
+        #     "reinf_fr",
+        #     "SOCM_cost",
+        #     "SOCM_work",
+        # ]
         alg_list = [
             "SOCM",
             "UW_SOCM",
             "SOCM_adjoint",
-            "work_adjoint",
-            "discrete_adjoint",
+            "work_adjoint_STL",
+            "continuous_adjoint_STL",
+            "discrete_adjoint_STL",
             "cross_entropy",
             "log-variance",
             "moment",
             "variance",
             "reinf",
             "reinf_fr",
-            "SOCM_cost",
-            "SOCM_work",
+            "SOCM_cost_STL",
+            "SOCM_work_STL",
         ]
 
 
@@ -448,7 +534,7 @@ def main(cfg: DictConfig):
     ylim_sup_grad = None
     plot_norm_sqd_diff = True
     title = None
-    use_fixed_colors = True
+    use_fixed_colors = False
 
     plt.rcParams["figure.dpi"] = 300
     print("figsize", plt.rcParams["figure.figsize"])  # Prints the default figure size
@@ -465,7 +551,8 @@ def main(cfg: DictConfig):
             print(f"file_name exists")
             with open(file_name, "rb") as f:
                 soc_solver = pickle.load(f)
-                soc_solver.legend_name = legend_names[k]
+                # soc_solver.legend_name = legend_names[k]
+                soc_solver.legend_name = legend_names[alg_names[k]]
                 compute_SNR(soc_solver.training_info)
                 compute_normalized_importance_weight_std_dev(soc_solver.training_info)
                 soc_solver_list.append(soc_solver)

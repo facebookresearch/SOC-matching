@@ -175,8 +175,9 @@ def grad_control(ts, states, sde, sigma):
 
 def grad_norm_control(ts, states, sde, sigma):
     with torch.enable_grad():
+        # dts = ts[1:] - ts[:-1]
 
-        def norm_control(ts, states):
+        def norm_sqd_control(ts, states):
             ts_repeat = ts.unsqueeze(1).unsqueeze(2).repeat(1, states.shape[1], 1)
             tx = torch.cat([ts_repeat, states], dim=-1)
             tx_reshape = torch.reshape(tx, (-1, tx.shape[2]))
@@ -188,11 +189,13 @@ def grad_norm_control(ts, states, sde, sigma):
             control_learned = -torch.einsum(
                 "ij,...j->...i", torch.transpose(sigma, 0, 1), nabla_V
             )
+            # print(f'control_learned.shape: {control_learned.shape}, dts.shape: {dts.shape}')
 
             return 0.5 * torch.sum(control_learned ** 2, dim=2)
 
         states = states.requires_grad_(True)
-        output = torch.autograd.grad(norm_control(ts, states).sum(), states)[0]
+        output = torch.autograd.grad(norm_sqd_control(ts, states).sum(), states)[0]
+        states = states.requires_grad_(False)
         return output
 
 def control_objective(
@@ -440,8 +443,10 @@ def get_folder_names_plots(cfg):
         ]
     for k, algorithm in enumerate(algorithms):
         folder_name = (
-            "../../outputs/multiruns/"
-            + str(k)
+            # "../../outputs/multiruns/"
+            # + str(k)
+            "../../outputs_2/multiruns/"
+            + cfg.method.setting
             + "/"
             + algorithm
             + "_"
@@ -465,7 +470,8 @@ def get_folder_names_plots(cfg):
         )
         folder_names.append(folder_name)
     plots_folder_name = (
-        "../../outputs/multiruns/plots/"
+        # "../../outputs/multiruns/plots/"
+        "../../outputs_2/multiruns/plots/"
         + cfg.method.setting
         + "_"
         + str(cfg.method.lmbd)

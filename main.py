@@ -174,6 +174,13 @@ def main(cfg: DictConfig):
         soc_solver.gamma = cfg.method.gamma
 
     ####### Set optimizer ########
+    M_algorithms = ["SOCM", "UW_SOCM", "SOCM_sc", "UW_SOCM_sc", "SOCM_sc_2B", "UW_SOCM_sc_2B",
+                    "SOCM_diag", "UW_SOCM_diag", "SOCM_diag_2B", "UW_SOCM_diag_2B",
+                    "UW_SOCM_no_v", "UW_SOCM_no_nabla_b_term", "UW_SOCM_no_noise",
+                    "SOCM_cost","SOCM_cost_sc","SOCM_cost_sc_2B","SOCM_cost_diag","SOCM_cost_diag_2B",
+                    "SOCM_cost_STL","SOCM_cost_sc_STL","SOCM_cost_sc_2B_STL","SOCM_cost_diag_STL","SOCM_cost_diag_2B_STL",
+                    "SOCM_work","SOCM_work_sc","SOCM_work_sc_2B","SOCM_work_diag","SOCM_work_diag_2B",
+                    "SOCM_work_STL","SOCM_work_sc_STL","SOCM_work_sc_2B_STL","SOCM_work_diag_STL","SOCM_work_diag_2B_STL"]
     if algorithm == "moment":
         optimizer = torch.optim.Adam(
             [{"params": soc_solver.neural_sde.parameters()}]
@@ -188,8 +195,12 @@ def main(cfg: DictConfig):
             lr=cfg.optim.nabla_V_lr,
             eps=cfg.optim.adam_eps,
         )
-    elif algorithm == "SOCM":
-        if cfg.method.use_stopping_time or algorithm == 'SOCM_scalar_2B' or algorithm == 'UW_SOCM_sc_2B' or algorithm == 'SOCM_cost_sc_2B':
+    # elif algorithm == "SOCM":
+    elif algorithm in M_algorithms:
+        two_boundary_algorithms = ["SOCM_sc_2B", "UW_SOCM_sc_2B", "SOCM_diag_2B", "UW_SOCM_diag_2B", "SOCM_cost_sc_2B", "SOCM_cost_diag_2B",
+                                   "SOCM_cost_sc_2B_STL", "SOCM_cost_diag_2B_STL", "SOCM_work_sc_2B", "SOCM_work_diag_2B", "SOCM_work_sc_2B_STL", "SOCM_work_diag_2B_STL"]
+        # if cfg.method.use_stopping_time or algorithm == 'SOCM_scalar_2B' or algorithm == 'UW_SOCM_sc_2B' or algorithm == 'SOCM_cost_sc_2B':
+        if cfg.method.use_stopping_time or algorithm in two_boundary_algorithms:
             optimizer = torch.optim.Adam(
                 [{"params": soc_solver.neural_sde.nabla_V.parameters()}]
                 + [
@@ -207,6 +218,12 @@ def main(cfg: DictConfig):
                 + [
                     {
                         "params": soc_solver.neural_sde.gamma2,
+                        "lr": cfg.optim.M_lr,
+                    }
+                ]
+                + [
+                    {
+                        "params": soc_solver.neural_sde.gamma3,
                         "lr": cfg.optim.M_lr,
                     }
                 ],
