@@ -134,7 +134,7 @@ class NeuralSDE(torch.nn.Module):
             ).to(self.device)
         else:
             self.gamma = torch.nn.Parameter(torch.tensor([self.gamma]).to(self.device))
-            if algorithm in ['SOCM_sc','UW_SOCM_sc','SOCM_cost_sc','SOCM_work_sc']:
+            if algorithm in ['SOCM_sc','UW_SOCM_sc','SOCM_cost_sc','SOCM_work_sc','SOCM_cost_sc_STL','SOCM_work_sc_STL']:
                 print(f'Using ScalarSigmoidMLP...')
                 self.M = models.ScalarSigmoidMLP(
                     dim=self.dim,
@@ -143,7 +143,7 @@ class NeuralSDE(torch.nn.Module):
                     scaling_factor=self.scaling_factor_M,
                     output_matrix=self.output_matrix,
                 ).to(self.device)
-            elif algorithm in ['SOCM_diag','UW_SOCM_diag','SOCM_cost_diag','SOCM_work_diag']:
+            elif algorithm in ['SOCM_diag','UW_SOCM_diag','SOCM_cost_diag','SOCM_work_diag','SOCM_cost_diag_STL','SOCM_work_diag_STL']:
                 # if setting == "sampling_cox":
                 #     print(f'Using DiagonalCNN...')
                 #     self.M = models.DiagonalCNN(
@@ -160,7 +160,7 @@ class NeuralSDE(torch.nn.Module):
                     scaling_factor=self.scaling_factor_M,
                     output_matrix=self.output_matrix,
                 ).to(self.device)
-            elif algorithm in ['SOCM_sc_2B','UW_SOCM_sc_2B','SOCM_cost_sc_2B','SOCM_work_sc_2B']:
+            elif algorithm in ['SOCM_sc_2B','UW_SOCM_sc_2B','SOCM_cost_sc_2B','SOCM_work_sc_2B','SOCM_cost_sc_2B_STL','SOCM_work_sc_2B_STL']:
                 print(f'Using TwoBoundaryScalarSigmoidMLP...')
                 self.gamma2 = torch.nn.Parameter(
                     torch.tensor([self.gamma2]).to(self.device)
@@ -174,7 +174,7 @@ class NeuralSDE(torch.nn.Module):
                     T = self.T,
                     output_matrix=self.output_matrix,
                 ).to(self.device)
-            elif algorithm in ['SOCM_diag_2B','UW_SOCM_diag_2B','SOCM_cost_diag_2B','SOCM_work_diag_2B']:
+            elif algorithm in ['SOCM_diag_2B','UW_SOCM_diag_2B','SOCM_cost_diag_2B','SOCM_work_diag_2B','SOCM_cost_diag_2B_STL','SOCM_work_diag_2B_STL']:
                 print(f'Using TwoBoundaryDiagonalSigmoidMLP...')
                 self.gamma2 = torch.nn.Parameter(
                     torch.tensor([self.gamma2]).to(self.device)
@@ -188,7 +188,9 @@ class NeuralSDE(torch.nn.Module):
                     T = self.T,
                     output_matrix=self.output_matrix,
                 ).to(self.device)
-            elif algorithm in ['SOCM_cost_identity','SOCM_work_identity','SOCM_cost_identity_2B','SOCM_work_identity_2B','UW_SOCM_identity']:
+            elif algorithm in ['SOCM_cost_identity','SOCM_work_identity','SOCM_cost_identity_2B','SOCM_work_identity_2B',
+                               'SOCM_cost_identity_STL','SOCM_work_identity_STL','SOCM_cost_identity_2B_STL','SOCM_work_identity_2B_STL',
+                               'SOCM_identity','UW_SOCM_identity']:
                 print(f'Using Identity...')
                 self.M = models.Identity(
                     dim=self.dim,
@@ -309,7 +311,7 @@ class SOC_Solver(nn.Module):
         elif len(self.x0.shape) == 2:
             state0 = self.x0
         d = state0.shape[1]
-        detach = algorithm != "discrete_adjoint"
+        detach = algorithm not in ["discrete_adjoint", "discrete_adjoint_STL"]
         (
             states,
             noises,
@@ -336,10 +338,12 @@ class SOC_Solver(nn.Module):
             + log_terminal_weight
         )
 
-        if algorithm == "discrete_adjoint":
+        if algorithm in ["discrete_adjoint", "discrete_adjoint_STL"]:
             ctrl_losses = -self.lmbd * (
                 log_path_weight_deterministic + log_terminal_weight
             )
+            if algorithm == "discrete_adjoint_STL":
+                ctrl_losses -= self.lmbd * log_path_weight_stochastic
             objective = torch.mean(ctrl_losses)
             weight = weight.detach()
             learned_control = controls.detach()
@@ -443,7 +447,7 @@ class SOC_Solver(nn.Module):
                 * weight.unsqueeze(0).unsqueeze(2)
             ) / (states.shape[0] * states.shape[1])
 
-        if algorithm == "SOCM_exp":
+        elif algorithm == "SOCM_exp":
             sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
             exp_factor = torch.exp(-self.gamma * self.ts)
             identity = torch.eye(d).to(self.x0.device)
@@ -552,15 +556,16 @@ class SOC_Solver(nn.Module):
                 * weight.unsqueeze(0).unsqueeze(2)
             ) / (states.shape[0] * states.shape[1])
 
-        if efficient_memory and algorithm in ["SOCM", "UW_SOCM", 
+        elif efficient_memory and algorithm in ["SOCM", "UW_SOCM", 
                                               "SOCM_sc", "UW_SOCM_sc", "SOCM_sc_2B", "UW_SOCM_sc_2B",
-                                              "SOCM_diag", "UW_SOCM_diag", "SOCM_diag_2B", "UW_SOCM_diag_2B", "UW_SOCM_identity"]:
+                                              "SOCM_diag", "UW_SOCM_diag", "SOCM_diag_2B", "UW_SOCM_diag_2B", 
+                                              "SOCM_identity", "UW_SOCM_identity"]:
             if self.output_matrix:
                 diagonal_M = False
                 scalar_M = False
             else:
                 diagonal_M = algorithm in ["SOCM_diag", "UW_SOCM_diag", "SOCM_diag_2B", "UW_SOCM_diag_2B"]
-                scalar_M = algorithm in ["SOCM_sc", "UW_SOCM_sc", "SOCM_sc_2B", "UW_SOCM_sc_2B", "UW_SOCM_identity"]
+                scalar_M = algorithm in ["SOCM_sc", "UW_SOCM_sc", "SOCM_sc_2B", "UW_SOCM_sc_2B", "SOCM_identity", "UW_SOCM_identity"]
             sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
             dts = self.ts[1:] - self.ts[:-1]
             identity = torch.eye(d).to(self.x0.device)
@@ -782,15 +787,17 @@ class SOC_Solver(nn.Module):
                     * weight.unsqueeze(0).unsqueeze(2)
                 ) / (states.shape[0] * states.shape[1])
 
-        if not efficient_memory and algorithm in ["SOCM", "UW_SOCM", 
+        elif not efficient_memory and algorithm in ["SOCM", "UW_SOCM", 
                                                   "SOCM_sc", "UW_SOCM_sc", "SOCM_sc_2B", "UW_SOCM_sc_2B",
-                                                  "SOCM_diag", "UW_SOCM_diag", "SOCM_diag_2B", "UW_SOCM_diag_2B", "UW_SOCM_identity", "UW_SOCM_no_v", "UW_SOCM_no_nabla_b_term", "UW_SOCM_no_noise"]:
+                                                  "SOCM_diag", "UW_SOCM_diag", "SOCM_diag_2B", "UW_SOCM_diag_2B", 
+                                                  "SOCM_identity", "UW_SOCM_identity", 
+                                                  "UW_SOCM_no_v", "UW_SOCM_no_nabla_b_term", "UW_SOCM_no_noise"]:
             if self.output_matrix:
                 diagonal_M = False
                 scalar_M = False
             else:
                 diagonal_M = algorithm in ["SOCM_diag", "UW_SOCM_diag", "SOCM_diag_2B", "UW_SOCM_diag_2B"]
-                scalar_M = algorithm in ["SOCM_sc", "UW_SOCM_sc", "SOCM_sc_2B", "UW_SOCM_sc_2B", "UW_SOCM_identity"]
+                scalar_M = algorithm in ["SOCM_sc", "UW_SOCM_sc", "SOCM_sc_2B", "UW_SOCM_sc_2B", "SOCM_identity", "UW_SOCM_identity"]
             sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
             identity = torch.eye(d).to(self.x0.device)
 
@@ -1099,7 +1106,7 @@ class SOC_Solver(nn.Module):
                         * weight.unsqueeze(0).unsqueeze(2)
                     ) / (states.shape[0] * states.shape[1])
 
-        if algorithm == "SOCM_adjoint" or algorithm == "work_adjoint" or algorithm == "work_adjoint_STL":
+        elif algorithm == "SOCM_adjoint" or algorithm == "work_adjoint" or algorithm == "work_adjoint_STL":
             nabla_f_evals = self.neural_sde.nabla_f(self.ts, states)
             nabla_b_evals = self.neural_sde.nabla_b(self.ts, states)
             nabla_g_evals = self.neural_sde.nabla_g(states[-1, :, :])
@@ -1231,9 +1238,12 @@ class SOC_Solver(nn.Module):
             objective = torch.mean(term_1 + control_term)
             weight = weight.detach()
 
-        elif algorithm in ["SOCM_cost","SOCM_cost_sc","SOCM_cost_sc_2B","SOCM_cost_diag","SOCM_cost_diag_2B","SOCM_cost_identity"]: # or algorithm == "reinf_PWRT":
-            diagonal_M = algorithm in ["SOCM_cost_diag", "SOCM_cost_diag_2B"]
-            scalar_M = algorithm in ["SOCM_cost_sc", "SOCM_cost_sc_2B", "SOCM_cost_identity"]
+        elif algorithm in ["SOCM_cost","SOCM_cost_sc","SOCM_cost_sc_2B","SOCM_cost_diag","SOCM_cost_diag_2B","SOCM_cost_identity",
+                           "SOCM_cost_STL","SOCM_cost_sc_STL","SOCM_cost_sc_2B_STL","SOCM_cost_diag_STL","SOCM_cost_diag_2B_SLT","SOCM_cost_identity_STL"]: # or algorithm == "reinf_PWRT":
+            # print(f'Running algorithm {algorithm}')
+            diagonal_M = algorithm in ["SOCM_cost_diag", "SOCM_cost_diag_2B","SOCM_cost_diag_STL","SOCM_cost_diag_2B_STL"]
+            scalar_M = algorithm in ["SOCM_cost_sc", "SOCM_cost_sc_2B", "SOCM_cost_identity", "SOCM_cost_sc_STL", "SOCM_cost_sc_2B_STL", "SOCM_cost_identity_STL"]
+            use_STL = algorithm in ["SOCM_cost_STL","SOCM_cost_sc_STL","SOCM_cost_sc_2B_STL","SOCM_cost_diag_STL","SOCM_cost_diag_2B_STL","SOCM_work_identity_STL"]
             sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
             identity = torch.eye(d).to(self.x0.device)
             dts = self.ts[1:] - self.ts[:-1]
@@ -1314,6 +1324,30 @@ class SOC_Solver(nn.Module):
                     ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])[:,None,None]
                 counter += self.num_steps + 1 - k
 
+            if use_STL:
+                def inner_prod_STL(states, vector):
+                    # print(f'self.ts.shape: {self.ts.shape}, states.shape: {states.shape}')
+                    ts_repeat = self.ts.unsqueeze(1).unsqueeze(2).repeat(1, states.shape[1], 1)
+                    tx = torch.cat([ts_repeat, states], dim=-1)
+                    tx_reshape = torch.reshape(tx, (-1, tx.shape[2]))
+
+                    # Evaluate nabla_V
+                    nabla_V = self.neural_sde.nabla_V(tx_reshape)
+                    nabla_V = torch.reshape(nabla_V, states.shape)
+                    learned_control = -torch.einsum(
+                        "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
+                    )
+                    # print(f'learned_control.shape: {learned_control.shape}, vector.shape: {vector.shape}')
+                    output = torch.sum(learned_control[:-1,:,:] * vector, dim=-1)
+                    return output
+                
+                if not states.requires_grad:
+                    states.requires_grad = True
+                STL_term = inner_prod_STL(states, noises)
+                STL_grad_term = torch.autograd.grad(STL_term.sum(), states, allow_unused=True)[0]
+                # print(f'STL_grad_term.shape: {STL_grad_term.shape}')
+                states.requires_grad = False
+
             # Compute terms corresponding to state and terminal costs
             nabla_norm_control = utils.grad_norm_control(self.ts, states, self.neural_sde, self.sigma)
             if diagonal_M:
@@ -1321,11 +1355,17 @@ class SOC_Solver(nn.Module):
                                                          * (self.neural_sde.nabla_f(self.ts, states) + nabla_norm_control)[None, :, :, :])[:, :-1, :, :]
                 M_evals_final = M_evals[:, -1, :]
                 least_squares_target_terminal = (M_evals_final[:, None, :] * self.neural_sde.nabla_g(states[-1, :, :])[None, :, :])
+                if use_STL:
+                    least_squares_target_integrand_STL_term = (M_evals[:, :, None, :]
+                                                               * STL_grad_term[None, :, :, :])[:, :-1, :, :]
             elif scalar_M:
                 least_squares_target_integrand_term_1 = (M_evals[:, :, None, None]
                                                          * (self.neural_sde.nabla_f(self.ts, states) + nabla_norm_control)[None, :, :, :])[:, :-1, :, :]
                 M_evals_final = M_evals[:, -1]
                 least_squares_target_terminal = (M_evals_final[:, None, None] * self.neural_sde.nabla_g(states[-1, :, :])[None, :, :])
+                if use_STL:
+                    least_squares_target_integrand_STL_term = (M_evals[:, :, None, None]
+                                                               * STL_grad_term[None, :, :, :])[:, :-1, :, :]
             else:
                 least_squares_target_integrand_term_1 = torch.einsum(
                     "ijkl,jml->ijmk",
@@ -1338,6 +1378,12 @@ class SOC_Solver(nn.Module):
                     M_evals_final,
                     self.neural_sde.nabla_g(states[-1, :, :]),
                 )
+                if use_STL:
+                    least_squares_target_integrand_STL_term = torch.einsum(
+                        "ijkl,jml->ijmk",
+                        M_evals,
+                        STL_grad_term,
+                    )[:, :-1, :, :]
             least_squares_target_integrand_term_1_times_dt = (
                 least_squares_target_integrand_term_1
                 * dts.unsqueeze(1).unsqueeze(2).unsqueeze(0)
@@ -1345,6 +1391,14 @@ class SOC_Solver(nn.Module):
             cumsum_least_squares_term_1 = torch.sum(
                 least_squares_target_integrand_term_1_times_dt, dim=1
             )
+            if use_STL:
+                least_squares_target_integrand_STL_term_times_sqrt_dt = (
+                    least_squares_target_integrand_STL_term
+                    * torch.sqrt(dts).unsqueeze(1).unsqueeze(2).unsqueeze(0)
+                )
+                cumsum_least_squares_STL_term = np.sqrt(self.lmbd) * torch.sum(
+                    least_squares_target_integrand_STL_term_times_sqrt_dt, dim=1
+                )
 
             def control_autograd_arg(ts, states):
                 ts_repeat = ts.unsqueeze(1).unsqueeze(2).repeat(1, states.shape[1], 1)
@@ -1411,10 +1465,18 @@ class SOC_Solver(nn.Module):
                 log_path_weight_deterministic_tensor[-1,:].unsqueeze(0) - log_path_weight_deterministic_tensor
                 + log_terminal_weight.unsqueeze(0)
             ).detach()
+            if use_STL:
+                STL_term_times_sqrt_dts = STL_term * torch.sqrt(self.lmbd * dts).unsqueeze(1)
+                STL_term_times_sqrt_dts = torch.cat((torch.zeros(1,STL_term_times_sqrt_dts.shape[1]).to(STL_term_times_sqrt_dts.device),
+                                                     STL_term_times_sqrt_dts), dim=0)
+                cumsum_reward_STL_term = torch.cumsum(STL_term_times_sqrt_dts, dim=0)
+                reward += (cumsum_reward_STL_term[-1,:].unsqueeze(0) - cumsum_reward_STL_term).detach()
 
             reward_times_M_term = reward.unsqueeze(2) * cumsum_least_squares_term_2_3 
 
             cum_terms = cumsum_least_squares_term_1 + least_squares_target_terminal - reward_times_M_term
+            if use_STL:
+                cum_terms += cumsum_least_squares_STL_term
 
             control_learned = -torch.einsum(
                 "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
@@ -1433,12 +1495,14 @@ class SOC_Solver(nn.Module):
             objective_per_time = torch.sum(
                 (control_learned - control_target) ** 2, dim=[1,2]
             ) / (states.shape[0] * states.shape[1])
-            print(f'objective_per_time: {objective_per_time}')
+            # print(f'objective_per_time: {objective_per_time}')
             #### TO DEBUG ######
 
-        elif algorithm in ["SOCM_work","SOCM_work_sc","SOCM_work_sc_2B","SOCM_work_diag","SOCM_work_diag_2B","SOCM_work_identity"]:
-            diagonal_M = algorithm in ["SOCM_work_diag", "SOCM_work_diag_2B"]
-            scalar_M = algorithm in ["SOCM_work_sc", "SOCM_work_sc_2B", "SOCM_work_identity"]
+        elif algorithm in ["SOCM_work","SOCM_work_sc","SOCM_work_sc_2B","SOCM_work_diag","SOCM_work_diag_2B","SOCM_work_identity",
+                           "SOCM_work_STL","SOCM_work_sc_STL","SOCM_work_sc_2B_STL","SOCM_work_diag_STL","SOCM_work_diag_2B_STL","SOCM_work_identity_STL"]:
+            diagonal_M = algorithm in ["SOCM_work_diag", "SOCM_work_diag_2B", "SOCM_work_diag_STL", "SOCM_work_diag_2B_STL"]
+            scalar_M = algorithm in ["SOCM_work_sc", "SOCM_work_sc_2B", "SOCM_work_identity", "SOCM_work_sc_STL", "SOCM_work_sc_2B_STL", "SOCM_work_identity_STL"]
+            use_STL = algorithm in ["SOCM_work_STL","SOCM_work_sc_STL","SOCM_work_sc_2B_STL","SOCM_work_diag_STL","SOCM_work_diag_2B_STL","SOCM_work_identity_STL"]
             sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
             identity = torch.eye(d).to(self.x0.device)
             dts = self.ts[1:] - self.ts[:-1]
@@ -1518,17 +1582,47 @@ class SOC_Solver(nn.Module):
                     ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])[:,None,None]
                 counter += self.num_steps + 1 - k
 
+            if use_STL:
+                def inner_prod_STL(states, vector):
+                    # print(f'self.ts.shape: {self.ts.shape}, states.shape: {states.shape}')
+                    ts_repeat = self.ts.unsqueeze(1).unsqueeze(2).repeat(1, states.shape[1], 1)
+                    tx = torch.cat([ts_repeat, states], dim=-1)
+                    tx_reshape = torch.reshape(tx, (-1, tx.shape[2]))
+
+                    # Evaluate nabla_V
+                    nabla_V = self.neural_sde.nabla_V(tx_reshape)
+                    nabla_V = torch.reshape(nabla_V, states.shape)
+                    learned_control = -torch.einsum(
+                        "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
+                    )
+                    # print(f'learned_control.shape: {learned_control.shape}, vector.shape: {vector.shape}')
+                    output = torch.sum(learned_control[:-1,:,:] * vector, dim=-1)
+                    return output
+                
+                if not states.requires_grad:
+                    states.requires_grad = True
+                STL_term = inner_prod_STL(states, noises)
+                STL_grad_term = torch.autograd.grad(STL_term.sum(), states, allow_unused=True)[0]
+                print(f'STL_grad_term.shape: {STL_grad_term.shape}')
+                states.requires_grad = False
+
             # Compute terms corresponding to state and terminal costs
             if diagonal_M:
                 least_squares_target_integrand_term_1 = (M_evals[:, :, None, :]
                                                          * self.neural_sde.nabla_f(self.ts, states)[None, :, :, :])[:, :-1, :, :]
                 M_evals_final = M_evals[:, -1, :]
                 least_squares_target_terminal = (M_evals_final[:, None, :] * self.neural_sde.nabla_g(states[-1, :, :])[None, :, :])
+                if use_STL:
+                    least_squares_target_integrand_STL_term = (M_evals[:, :, None, :]
+                                                               * STL_grad_term[None, :, :, :])[:, :-1, :, :]
             elif scalar_M:
                 least_squares_target_integrand_term_1 = (M_evals[:, :, None, None]
                                                          * self.neural_sde.nabla_f(self.ts, states)[None, :, :, :])[:, :-1, :, :]
                 M_evals_final = M_evals[:, -1]
                 least_squares_target_terminal = (M_evals_final[:, None, None] * self.neural_sde.nabla_g(states[-1, :, :])[None, :, :])
+                if use_STL:
+                    least_squares_target_integrand_STL_term = (M_evals[:, :, None, None]
+                                                               * STL_grad_term[None, :, :, :])[:, :-1, :, :]
             else:
                 least_squares_target_integrand_term_1 = torch.einsum(
                     "ijkl,jml->ijmk",
@@ -1541,6 +1635,14 @@ class SOC_Solver(nn.Module):
                     M_evals_final,
                     self.neural_sde.nabla_g(states[-1, :, :]),
                 )
+                if use_STL:
+                    least_squares_target_integrand_STL_term = torch.einsum(
+                        "ijkl,jml->ijmk",
+                        M_evals,
+                        STL_grad_term,
+                    )[:, :-1, :, :]
+            # print(f'least_squares_target_integrand_term_1.shape: {least_squares_target_integrand_term_1.shape}')
+            # print(f'least_squares_target_integrand_STL_term.shape: {least_squares_target_integrand_STL_term.shape}')
             least_squares_target_integrand_term_1_times_dt = (
                 least_squares_target_integrand_term_1
                 * dts.unsqueeze(1).unsqueeze(2).unsqueeze(0)
@@ -1548,6 +1650,14 @@ class SOC_Solver(nn.Module):
             cumsum_least_squares_term_1 = torch.sum(
                 least_squares_target_integrand_term_1_times_dt, dim=1
             )
+            if use_STL:
+                least_squares_target_integrand_STL_term_times_sqrt_dt = (
+                    least_squares_target_integrand_STL_term
+                    * torch.sqrt(dts).unsqueeze(1).unsqueeze(2).unsqueeze(0)
+                )
+                cumsum_least_squares_STL_term = np.sqrt(self.lmbd) * torch.sum(
+                    least_squares_target_integrand_STL_term_times_sqrt_dt, dim=1
+                )
 
             def control_autograd_arg(ts, states):
                 output = torch.sum((self.neural_sde.b(self.ts, states) 
@@ -1600,10 +1710,26 @@ class SOC_Solver(nn.Module):
                 log_path_weight_f_tensor[-1,:].unsqueeze(0) - log_path_weight_f_tensor
                 + log_terminal_weight.unsqueeze(0)
             ).detach()
+            if use_STL:
+                # print(f'STL_term.shape: {STL_term.shape}, dts.shape: {dts.shape}')
+                STL_term_times_sqrt_dts = STL_term * torch.sqrt(self.lmbd * dts).unsqueeze(1)
+                # print(f'STL_term_times_sqrt_dts.shape: {STL_term_times_sqrt_dts.shape}')
+                STL_term_times_sqrt_dts = torch.cat((torch.zeros(1,STL_term_times_sqrt_dts.shape[1]).to(STL_term_times_sqrt_dts.device),
+                                                     STL_term_times_sqrt_dts), dim=0)
+                # print(f'STL_term_times_sqrt_dts.shape: {STL_term_times_sqrt_dts.shape}')
+                cumsum_reward_STL_term = torch.cumsum(STL_term_times_sqrt_dts, dim=0)
+                # print(f'cumsum_reward_STL_term.shape: {cumsum_reward_STL_term.shape}, reward.shape: {reward.shape}')
+                # cumsum_reward_STL_term = np.sqrt(self.lmbd) * torch.sum(
+                #     STL_term * torch.sqrt(dts).unsqueeze(1), dim=0
+                # )
+                # print(f'reward.shape: {reward.shape}, cumsum_reward_STL_term.shape: {cumsum_reward_STL_term.shape}')
+                reward += (cumsum_reward_STL_term[-1,:].unsqueeze(0) - cumsum_reward_STL_term).detach()
 
             reward_times_M_term = reward.unsqueeze(2) * cumsum_least_squares_term_2_3 
 
             cum_terms = cumsum_least_squares_term_1 + least_squares_target_terminal - reward_times_M_term
+            if use_STL:
+                cum_terms += cumsum_least_squares_STL_term
 
             control_learned = -torch.einsum(
                 "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
@@ -1760,13 +1886,13 @@ class SOC_Solver(nn.Module):
             ) / (states.shape[0] * states.shape[1])
 
         if compute_L2_error:
-            if algorithm == "discrete_adjoint":
+            if algorithm in ["discrete_adjoint", "discrete_adjoint_STL"]:
                 target_control = optimal_control(self.ts, states, t_is_tensor=True)[
                     :-1, :, :
                 ].detach()
             else:
                 target_control = optimal_control(self.ts, states, t_is_tensor=True)
-            if algorithm != "discrete_adjoint":
+            if not algorithm in ["discrete_adjoint", "discrete_adjoint_STL"]:
                 learned_control = -torch.einsum(
                     "ij,abj->abi", torch.transpose(self.sigma, 0, 1), nabla_V
                 )

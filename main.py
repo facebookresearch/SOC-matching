@@ -231,7 +231,7 @@ def main(cfg: DictConfig):
                 lr=cfg.optim.nabla_V_lr,
                 eps=cfg.optim.adam_eps,
             )
-    elif algorithm == "discrete_adjoint":
+    elif algorithm == "discrete_adjoint" or algorithm == "discrete_adjoint_STL":
         optimizer = torch.optim.Adam(
             soc_solver.parameters(), lr=cfg.optim.nabla_V_lr, eps=cfg.optim.adam_eps
         )
