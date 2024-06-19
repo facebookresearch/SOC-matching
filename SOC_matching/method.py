@@ -165,11 +165,15 @@ class NeuralSDE(torch.nn.Module):
                 self.gamma2 = torch.nn.Parameter(
                     torch.tensor([self.gamma2]).to(self.device)
                 )
+                self.gamma3 = torch.nn.Parameter(
+                    torch.tensor([self.gamma3]).to(self.device)
+                )
                 self.M = models.TwoBoundaryScalarSigmoidMLP(
                     dim=self.dim,
                     hdims=self.hdims_M,
                     gamma=self.gamma,
                     gamma2=self.gamma2,
+                    gamma3=self.gamma3,
                     scaling_factor=self.scaling_factor_M,
                     T = self.T,
                     output_matrix=self.output_matrix,
@@ -179,11 +183,15 @@ class NeuralSDE(torch.nn.Module):
                 self.gamma2 = torch.nn.Parameter(
                     torch.tensor([self.gamma2]).to(self.device)
                 )
+                self.gamma3 = torch.nn.Parameter(
+                    torch.tensor([self.gamma3]).to(self.device)
+                )
                 self.M = models.TwoBoundaryDiagonalSigmoidMLP(
                     dim=self.dim,
                     hdims=self.hdims_M,
                     gamma=self.gamma,
                     gamma2=self.gamma2,
+                    gamma3=self.gamma3,
                     scaling_factor=self.scaling_factor_M,
                     T = self.T,
                     output_matrix=self.output_matrix,
@@ -1427,8 +1435,9 @@ class SOC_Solver(nn.Module):
                 )
 
             least_squares_target_integrand_term_2_3_times_sqrt_dt = (
-                least_squares_target_integrand_term_2
-                + least_squares_target_integrand_term_3
+                (least_squares_target_integrand_term_2
+                + least_squares_target_integrand_term_3)
+                * torch.sqrt(dts).unsqueeze(1).unsqueeze(2)
             )
             cumsum_least_squares_term_2_3 = torch.sum(
                 least_squares_target_integrand_term_2_3_times_sqrt_dt, dim=1
@@ -1693,8 +1702,9 @@ class SOC_Solver(nn.Module):
                 )
 
             least_squares_target_integrand_term_2_3_times_sqrt_dt = (
-                least_squares_target_integrand_term_2
-                + least_squares_target_integrand_term_3
+                (least_squares_target_integrand_term_2
+                + least_squares_target_integrand_term_3)
+                * torch.sqrt(dts).unsqueeze(1).unsqueeze(2)
             )
             cumsum_least_squares_term_2_3 = torch.sum(
                 least_squares_target_integrand_term_2_3_times_sqrt_dt, dim=1
@@ -1717,8 +1727,8 @@ class SOC_Solver(nn.Module):
                 #     STL_term * torch.sqrt(dts).unsqueeze(1), dim=0
                 # )
                 # print(f'reward.shape: {reward.shape}, cumsum_reward_STL_term.shape: {cumsum_reward_STL_term.shape}')
-                print(f'torch.norm(reward): {torch.norm(reward)}')
-                print(f'torch.norm((cumsum_reward_STL_term[-1,:].unsqueeze(0) - cumsum_reward_STL_term).detach()): {torch.norm((cumsum_reward_STL_term[-1,:].unsqueeze(0) - cumsum_reward_STL_term).detach())}')
+                # print(f'torch.norm(reward): {torch.norm(reward)}')
+                # print(f'torch.norm((cumsum_reward_STL_term[-1,:].unsqueeze(0) - cumsum_reward_STL_term).detach()): {torch.norm((cumsum_reward_STL_term[-1,:].unsqueeze(0) - cumsum_reward_STL_term).detach())}')
                 reward += (cumsum_reward_STL_term[-1,:].unsqueeze(0) - cumsum_reward_STL_term).detach()
 
             reward_times_M_term = reward.unsqueeze(2) * cumsum_least_squares_term_2_3 
@@ -1741,21 +1751,21 @@ class SOC_Solver(nn.Module):
             ) / (states.shape[0] * states.shape[1])
 
             #### TO DEBUG ######
-            print(f'self.neural_sde.gamma: {self.neural_sde.gamma}')
-            # Initialize a variable to hold the norm
-            total_norm = 0
+            # print(f'self.neural_sde.gamma: {self.neural_sde.gamma}')
+            # # Initialize a variable to hold the norm
+            # total_norm = 0
 
-            # Iterate over the model parameters
-            for param in self.neural_sde.M.parameters():
-                if param.requires_grad:  # Only consider parameters that require gradients
-                    # Add the norm of the parameter
-                    param_norm = param.data.norm(2)
-                    total_norm += param_norm.item() ** 2  # Square the norm and add it to the total
+            # # Iterate over the model parameters
+            # for param in self.neural_sde.M.parameters():
+            #     if param.requires_grad:  # Only consider parameters that require gradients
+            #         # Add the norm of the parameter
+            #         param_norm = param.data.norm(2)
+            #         total_norm += param_norm.item() ** 2  # Square the norm and add it to the total
 
-            # Take the square root of the total norm to get the final L2 norm
-            total_norm = total_norm ** 0.5
-            print(f"L2 norm of the weights of self.neural_sde.M: {total_norm}")
-            # print(f'objective_per_time: {objective_per_time}')
+            # # Take the square root of the total norm to get the final L2 norm
+            # total_norm = total_norm ** 0.5
+            # print(f"L2 norm of the weights of self.neural_sde.M: {total_norm}")
+            # # print(f'objective_per_time: {objective_per_time}')
             #### TO DEBUG ######
 
         elif (
@@ -1809,7 +1819,8 @@ class SOC_Solver(nn.Module):
             if algorithm == "log-variance":
                 sum_terms = deterministic_term + stochastic_term + g_term
             elif algorithm == "variance":
-                sum_terms = torch.exp(deterministic_term + stochastic_term + g_term + 120)
+                # sum_terms = torch.exp(deterministic_term + stochastic_term + g_term + 120)
+                sum_terms = torch.exp(deterministic_term + stochastic_term + g_term)
             elif algorithm == "moment":
                 sum_terms = deterministic_term + stochastic_term + g_term + self.y0
 
