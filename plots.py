@@ -513,7 +513,7 @@ def main(cfg: DictConfig):
             "SOCM_adjoint",
             "work_adjoint_STL",
             "continuous_adjoint_STL",
-            "discrete_adjoint_STL",
+            "discrete_adjoint",
             "cross_entropy",
             "log-variance",
             "moment",
@@ -523,7 +523,47 @@ def main(cfg: DictConfig):
             "SOCM_cost_STL",
             "SOCM_work_STL",
         ]
-
+    elif cfg.method.plot_number == 10:
+        alg_list = [
+            "SOCM",
+            "UW_SOCM",
+            "SOCM_identity",
+            "UW_SOCM_identity",
+            "SOCM_diag",
+            "UW_SOCM_diag",
+            "SOCM_diag_2B",
+            "UW_SOCM_diag_2B",
+            "SOCM_sc",
+            "UW_SOCM_sc",
+            "SOCM_sc_2B",
+            "UW_SOCM_sc_2B",
+            "SOCM_adjoint",
+        ]
+    elif cfg.method.plot_number == 11:
+        #To show all UW_SOCM algorithms
+        alg_list = [
+            "SOCM",
+            "SOCM_diag",
+            "SOCM_diag_2B",
+            # "SOCM_sc",
+            # "SOCM_sc_2B",
+            "SOCM_identity",
+        ]
+    elif cfg.method.plot_number == 12:
+        alg_list = [
+            "SOCM_cost",
+            "SOCM_cost_STL",
+            "SOCM_cost_diag",
+            "SOCM_cost_diag_STL",
+            "SOCM_cost_diag_2B",
+            "SOCM_cost_diag_2B_STL",
+            "SOCM_work",
+            "SOCM_work_STL",
+            "SOCM_work_diag",
+            "SOCM_work_diag_STL",
+            "SOCM_work_diag_2B",
+            "SOCM_work_diag_2B_STL",
+        ]
 
     file_name = "last"
     set_ylims = False
