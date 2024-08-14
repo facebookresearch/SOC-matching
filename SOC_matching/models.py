@@ -243,11 +243,12 @@ class FullyConnectedUNet(torch.nn.Module):
 
 
 class SigmoidMLP(torch.nn.Module):
-    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, scaling_factor=1.0):
+    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, scaling_factor=1.0, identity_init=True):
         super().__init__()
 
         self.dim = dim
         self.gamma = gamma
+        self.identity_init = identity_init
         self.sigmoid_layers = nn.Sequential(
             nn.Linear(2, hdims[0]),
             nn.ReLU(),
@@ -269,6 +270,8 @@ class SigmoidMLP(torch.nn.Module):
             torch.exp(self.gamma * (ts[:, 1] - ts[:, 0])).unsqueeze(1).unsqueeze(2)
         )
         identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)
+        if not self.identity_init:
+            identity = torch.zeros_like(identity)
         output = (1 / exp_factor) * identity.repeat(ts.shape[0], 1, 1) + (
             1 - 1 / exp_factor
         ) * sigmoid_layers_output
@@ -297,12 +300,13 @@ class Identity(torch.nn.Module):
             return torch.ones(ts.shape[0]).to(ts.device)
     
 class ScalarSigmoidMLP(torch.nn.Module):
-    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, scaling_factor=1.0, output_matrix=False):
+    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, scaling_factor=1.0, output_matrix=False, identity_init=True):
         super().__init__()
 
         self.dim = dim
         self.gamma = gamma
         self.output_matrix = output_matrix
+        self.identity_init = identity_init
         self.sigmoid_layers = nn.Sequential(
             nn.Linear(2, hdims[0]),
             nn.ReLU(),
@@ -329,6 +333,8 @@ class ScalarSigmoidMLP(torch.nn.Module):
                 torch.exp(self.gamma * (ts[:, 1] - ts[:, 0])).unsqueeze(1).unsqueeze(2)
             )
             identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)
+            if not self.identity_init:
+                identity = torch.zeros_like(identity)
             # print(f'exp_factor.shape: {exp_factor.shape}, sigmoid_layers_output.shape: {sigmoid_layers_output.shape}')
             output = ( (1 / exp_factor) + (1 - 1 / exp_factor) * sigmoid_layers_output ) * identity.repeat(ts.shape[0], 1, 1)
             return output
@@ -338,16 +344,20 @@ class ScalarSigmoidMLP(torch.nn.Module):
                 torch.exp(self.gamma * (ts[:, 1] - ts[:, 0]))
             )
             # print(f'sigmoid_layers_output.shape: {sigmoid_layers_output.shape}, exp_factor.shape: {exp_factor.shape}')
-            output = (1 / exp_factor) + (1 - 1 / exp_factor) * sigmoid_layers_output
+            if self.identity_init:
+                output = (1 / exp_factor) + (1 - 1 / exp_factor) * sigmoid_layers_output
+            else:
+                output = (1 - 1 / exp_factor) * sigmoid_layers_output
             return output
     
 class DiagonalSigmoidMLP(torch.nn.Module):
-    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, scaling_factor=1.0, output_matrix=False):
+    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, scaling_factor=1.0, output_matrix=False, identity_init=True):
         super().__init__()
 
         self.dim = dim
         self.gamma = gamma
         self.output_matrix = output_matrix
+        self.identity_init = identity_init
         self.sigmoid_layers = nn.Sequential(
             nn.Linear(2, hdims[0]),
             nn.ReLU(),
@@ -370,6 +380,8 @@ class DiagonalSigmoidMLP(torch.nn.Module):
                 torch.exp(self.gamma * (ts[:, 1] - ts[:, 0])).unsqueeze(1).unsqueeze(2)
             )
             identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)
+            if not self.identity_init:
+                identity = torch.zeros_like(identity)
             output = (1 / exp_factor) * identity.repeat(ts.shape[0], 1, 1) + (
                 1 - 1 / exp_factor
             ) * sigmoid_layers_output
@@ -378,11 +390,14 @@ class DiagonalSigmoidMLP(torch.nn.Module):
             sigmoid_layers_output = self.sigmoid_layers(ts) #.unsqueeze(2)
             exp_factor = torch.exp(self.gamma * (ts[:, 1] - ts[:, 0])).unsqueeze(1) #.unsqueeze(2)
             # print(f'sigmoid_layers_output.shape: {sigmoid_layers_output.shape}, exp_factor.shape: {exp_factor.shape}')
-            output = (1 / exp_factor) + (1 - 1 / exp_factor) * sigmoid_layers_output
+            if self.identity_init:
+                output = (1 / exp_factor) + (1 - 1 / exp_factor) * sigmoid_layers_output
+            else:
+                output = (1 - 1 / exp_factor) * sigmoid_layers_output
             return output
     
 class TwoBoundaryScalarSigmoidMLP(torch.nn.Module):
-    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, gamma2=3.0, gamma3=10.0, scaling_factor=1.0, T=1.0, output_matrix=False):
+    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, gamma2=3.0, gamma3=10.0, scaling_factor=1.0, T=1.0, output_matrix=False, identity_init=True):
         super().__init__()
 
         self.dim = dim
@@ -391,6 +406,7 @@ class TwoBoundaryScalarSigmoidMLP(torch.nn.Module):
         self.gamma3 = gamma3
         self.T = T
         self.output_matrix = output_matrix
+        self.identity_init = identity_init
         self.sigmoid_layers = nn.Sequential(
             nn.Linear(2, hdims[0]),
             nn.ReLU(),
@@ -416,8 +432,10 @@ class TwoBoundaryScalarSigmoidMLP(torch.nn.Module):
 
             factor2 = (1 - torch.exp(-self.gamma * (ts[:, 1] - ts[:, 0]))) * (torch.exp(-self.gamma2 * (ts[:, 1] - ts[:, 0])) - torch.exp(-self.gamma2 * (1 - ts[:, 0])))
             identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)
-
-            output = (factor1[:,None,None] + sigmoid_layers_output * factor2[:,None,None]) * identity.repeat(ts.shape[0], 1, 1)
+            if self.identity_init:
+                output = (factor1[:,None,None] + sigmoid_layers_output * factor2[:,None,None]) * identity.repeat(ts.shape[0], 1, 1)
+            else:
+                output = sigmoid_layers_output * factor2[:,None,None] * identity.repeat(ts.shape[0], 1, 1)
             return output
         else:
             sigmoid_layers_output = self.sigmoid_layers(ts).squeeze(1)
@@ -428,11 +446,14 @@ class TwoBoundaryScalarSigmoidMLP(torch.nn.Module):
 
             factor2 = (1 - torch.exp(-self.gamma * (ts[:, 1] - ts[:, 0]))) * (torch.exp(-self.gamma2 * (ts[:, 1] - ts[:, 0])) - torch.exp(-self.gamma2 * (1 - ts[:, 0])))
 
-            output = factor1 + sigmoid_layers_output * factor2
+            if self.identity_init:
+                output = factor1 + sigmoid_layers_output * factor2
+            else:
+                output = sigmoid_layers_output * factor2
             return output
     
 class TwoBoundaryDiagonalSigmoidMLP(torch.nn.Module):
-    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, gamma2=3.0, gamma3=10.0, scaling_factor=1.0, T=1.0, output_matrix=False):
+    def __init__(self, dim=10, hdims=[128, 128], gamma=3.0, gamma2=3.0, gamma3=10.0, scaling_factor=1.0, T=1.0, output_matrix=False, identity_init=True):
         super().__init__()
 
         self.dim = dim
@@ -441,6 +462,7 @@ class TwoBoundaryDiagonalSigmoidMLP(torch.nn.Module):
         self.gamma3 = gamma3
         self.T = T
         self.output_matrix = output_matrix
+        self.identity_init = identity_init
         self.sigmoid_layers = nn.Sequential(
             nn.Linear(2, hdims[0]),
             nn.ReLU(),
@@ -465,6 +487,8 @@ class TwoBoundaryDiagonalSigmoidMLP(torch.nn.Module):
 
             factor2 = (1 - torch.exp(-self.gamma * (ts[:, 1] - ts[:, 0]))) * (torch.exp(-self.gamma2 * (ts[:, 1] - ts[:, 0])) - torch.exp(-self.gamma2 * (1 - ts[:, 0])))
             identity = torch.eye(self.dim).unsqueeze(0).to(ts.device)
+            if self.identity_init:
+                identity = torch.zeros_like(identity)
 
             output = factor1[:,None,None] * identity.repeat(ts.shape[0], 1, 1) + sigmoid_layers_output * factor2[:,None,None]
             return output
@@ -478,7 +502,10 @@ class TwoBoundaryDiagonalSigmoidMLP(torch.nn.Module):
             factor2 = (1 - torch.exp(-self.gamma * (ts[:, 1] - ts[:, 0]))) * (torch.exp(-self.gamma2 * (ts[:, 1] - ts[:, 0])) - torch.exp(-self.gamma2 * (1 - ts[:, 0])))
             # print(f'factor2.shape: {factor2.shape}')
 
-            output = factor1[:,None] + sigmoid_layers_output * factor2[:,None]
+            if self.identity_init:
+                output = factor1[:,None] + sigmoid_layers_output * factor2[:,None]
+            else:
+                output = sigmoid_layers_output * factor2[:,None]
             # print(f'output.shape: {output.shape}')
             return output
 

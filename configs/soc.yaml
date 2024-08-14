@@ -63,5 +63,5 @@ hydra:
     tasks_per_node: ${hydra.launcher.gpus_per_node}
     nodes: 1
     partition: learnlab
-    exclude: learnfair[5025-5028,5041-5316,7456-7735]
+    # exclude: learnfair[5025-5028,5041-5316,7456-7735]
     # constraint: volta32gb

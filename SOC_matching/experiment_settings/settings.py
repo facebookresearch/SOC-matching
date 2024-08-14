@@ -22,6 +22,7 @@ from SOC_matching.experiment_settings.OU_linear import OU_Linear
 from SOC_matching.experiment_settings.double_well import DoubleWell
 from SOC_matching.experiment_settings.molecular_dynamics import MolecularDynamics
 from SOC_matching.experiment_settings.sampling import Sampler
+from SOC_matching.experiment_settings.pis_gaussians import PIS_Sampler
 
 
 def ground_truth_control(cfg, ts, x0, **kwargs):
@@ -119,6 +120,10 @@ def ground_truth_control(cfg, ts, x0, **kwargs):
         return optimal_sde
     
     elif cfg.method.setting in ["sampling_cox", "sampling_funnel", "sampling_MG"]:
+        optimal_sde = None
+        return optimal_sde
+
+    elif cfg.method.setting == "pis_gaussians":
         optimal_sde = None
         return optimal_sde
 
@@ -229,6 +234,22 @@ def define_neural_sde(cfg, ts, x0, u_warm_start, **kwargs):
             hdims_M=cfg.arch.hdims_M,
             setting=cfg.method.setting,
             lmbd=cfg.method.lmbd,
+            sigma=kwargs["sigma"],
+            gamma=cfg.method.gamma,
+            T=cfg.method.T,
+            scaling_factor_nabla_V=cfg.method.scaling_factor_nabla_V,
+            scaling_factor_M=cfg.method.scaling_factor_M,
+            output_matrix=cfg.method.output_matrix,
+        )
+    elif cfg.method.setting == "pis_gaussians":
+        neural_sde = PIS_Sampler(
+            device=cfg.method.device,
+            dim=cfg.method.d,
+            hdims=cfg.arch.hdims,
+            hdims_M=cfg.arch.hdims_M,
+            lmbd=cfg.method.lmbd,
+            kappa=kwargs["kappa"],
+            eta=kwargs["eta"],
             sigma=kwargs["sigma"],
             gamma=cfg.method.gamma,
             T=cfg.method.T,
@@ -429,5 +450,19 @@ def define_variables(cfg, ts):
             x0,
             u_warm_start,
             sigma=sigma,
+        )
+        return x0, sigma, optimal_sde, neural_sde, u_warm_start
+    
+    elif cfg.method.setting == "pis_gaussians":
+        x0 = torch.zeros(cfg.method.d).to(cfg.method.device)
+        sigma = torch.eye(cfg.method.d).to(cfg.method.device)
+
+        kappa = 1.0
+        eta = 1.5
+
+        optimal_sde = ground_truth_control(cfg, ts, x0, sigma=sigma)
+        u_warm_start = set_warm_start(cfg, optimal_sde, x0, sigma)
+        neural_sde = define_neural_sde(
+            cfg, ts, x0, u_warm_start, sigma=sigma, kappa=kappa, eta=eta
         )
         return x0, sigma, optimal_sde, neural_sde, u_warm_start

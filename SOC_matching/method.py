@@ -115,6 +115,8 @@ class NeuralSDE(torch.nn.Module):
             scaling_factor=self.scaling_factor_nabla_V,
         ).to(self.device)
 
+        identity_init = not algorithm in ["UW_SOCM_plus", "UW_SOCM_plus_STL", "UW_SOCM_plus_diag", "UW_SOCM_plus_diag_STL", "UW_SOCM_plus_sc", "UW_SOCM_plus_sc_STL"]
+
         print(f"initialize_models, self.use_stopping_time: {self.use_stopping_time}")
         if self.use_stopping_time:
             self.gamma = torch.nn.Parameter(torch.tensor([self.gamma]).to(self.device))
@@ -134,7 +136,7 @@ class NeuralSDE(torch.nn.Module):
             ).to(self.device)
         else:
             self.gamma = torch.nn.Parameter(torch.tensor([self.gamma]).to(self.device))
-            if algorithm in ['SOCM_sc','UW_SOCM_sc','SOCM_cost_sc','SOCM_work_sc','SOCM_cost_sc_STL','SOCM_work_sc_STL']:
+            if algorithm in ['SOCM_sc','UW_SOCM_sc','SOCM_cost_sc','SOCM_work_sc','SOCM_cost_sc_STL','SOCM_work_sc_STL','UW_SOCM_plus_sc','UW_SOCM_plus_sc_STL']:
                 print(f'Using ScalarSigmoidMLP...')
                 self.M = models.ScalarSigmoidMLP(
                     dim=self.dim,
@@ -142,8 +144,9 @@ class NeuralSDE(torch.nn.Module):
                     gamma=self.gamma,
                     scaling_factor=self.scaling_factor_M,
                     output_matrix=self.output_matrix,
+                    identity_init=identity_init
                 ).to(self.device)
-            elif algorithm in ['SOCM_diag','UW_SOCM_diag','SOCM_cost_diag','SOCM_work_diag','SOCM_cost_diag_STL','SOCM_work_diag_STL']:
+            elif algorithm in ['SOCM_diag','UW_SOCM_diag','SOCM_cost_diag','SOCM_work_diag','SOCM_cost_diag_STL','SOCM_work_diag_STL','UW_SOCM_plus_diag','UW_SOCM_plus_diag_STL']:
                 # if setting == "sampling_cox":
                 #     print(f'Using DiagonalCNN...')
                 #     self.M = models.DiagonalCNN(
@@ -159,6 +162,7 @@ class NeuralSDE(torch.nn.Module):
                     gamma=self.gamma,
                     scaling_factor=self.scaling_factor_M,
                     output_matrix=self.output_matrix,
+                    identity_init=identity_init
                 ).to(self.device)
             elif algorithm in ['SOCM_sc_2B','UW_SOCM_sc_2B','SOCM_cost_sc_2B','SOCM_work_sc_2B','SOCM_cost_sc_2B_STL','SOCM_work_sc_2B_STL']:
                 print(f'Using TwoBoundaryScalarSigmoidMLP...')
@@ -177,6 +181,7 @@ class NeuralSDE(torch.nn.Module):
                     scaling_factor=self.scaling_factor_M,
                     T = self.T,
                     output_matrix=self.output_matrix,
+                    identity_init=identity_init
                 ).to(self.device)
             elif algorithm in ['SOCM_diag_2B','UW_SOCM_diag_2B','SOCM_cost_diag_2B','SOCM_work_diag_2B','SOCM_cost_diag_2B_STL','SOCM_work_diag_2B_STL']:
                 print(f'Using TwoBoundaryDiagonalSigmoidMLP...')
@@ -195,6 +200,7 @@ class NeuralSDE(torch.nn.Module):
                     scaling_factor=self.scaling_factor_M,
                     T = self.T,
                     output_matrix=self.output_matrix,
+                    identity_init=identity_init
                 ).to(self.device)
             elif algorithm in ['SOCM_cost_identity','SOCM_work_identity','SOCM_cost_identity_2B','SOCM_work_identity_2B',
                                'SOCM_cost_identity_STL','SOCM_work_identity_STL','SOCM_cost_identity_2B_STL','SOCM_work_identity_2B_STL',
@@ -211,6 +217,7 @@ class NeuralSDE(torch.nn.Module):
                     hdims=self.hdims_M,
                     gamma=self.gamma,
                     scaling_factor=self.scaling_factor_M,
+                    identity_init=identity_init
                 ).to(self.device)
 
         # Use learned control in the stochastic_trajectories function
@@ -258,7 +265,7 @@ class SOC_Solver(nn.Module):
         )
         return learned_control
 
-    def control_objective(self, batch_size, total_n_samples=65536):
+    def control_objective(self, batch_size, total_n_samples=65536, compute_exp_control_objective_STL=False):
         n_batches = int(total_n_samples // batch_size)
         effective_n_samples = n_batches * batch_size
         for k in range(n_batches):
@@ -269,7 +276,7 @@ class SOC_Solver(nn.Module):
                 _,
                 _,
                 log_path_weight_deterministic,
-                _,
+                log_path_weight_stochastic,
                 log_terminal_weight,
                 _,
                 _,
@@ -291,13 +298,110 @@ class SOC_Solver(nn.Module):
                     log_path_weight_deterministic + log_terminal_weight
                 )
                 ctrl_losses = torch.cat((ctrl_losses, ctrl_loss), 0)
+            if compute_exp_control_objective_STL:
+                if k == 0:
+                    # print(f'states.shape exp_control_objective_STL computation: {states.shape}')
+                    control_objectives_STL = self.lmbd * (
+                        log_path_weight_deterministic + log_path_weight_stochastic + log_terminal_weight
+                    )
+                else:
+                    control_objective_STL = self.lmbd * (
+                        log_path_weight_deterministic + log_path_weight_stochastic + log_terminal_weight
+                    )
+                    control_objectives_STL = torch.cat((control_objectives_STL, control_objective_STL), 0)
             if k % 32 == 31:
                 print(f"Batch {k+1}/{n_batches} done")
-        return (
-            torch.mean(ctrl_losses),
-            torch.std(ctrl_losses) / np.sqrt(effective_n_samples - 1),
-            trajectory,
+        if compute_exp_control_objective_STL:
+            return (
+                torch.mean(ctrl_losses),
+                torch.std(ctrl_losses) / np.sqrt(effective_n_samples - 1),
+                torch.mean(control_objectives_STL),
+                torch.std(control_objectives_STL) / np.sqrt(effective_n_samples - 1),
+                torch.mean(torch.exp(control_objectives_STL)),
+                torch.std(torch.exp(control_objectives_STL)) / np.sqrt(effective_n_samples - 1),
+                trajectory,
+            )
+        else:
+            return (
+                torch.mean(ctrl_losses),
+                torch.std(ctrl_losses) / np.sqrt(effective_n_samples - 1),
+                trajectory,
+            )
+    
+    def M_matrix_and_derivative(self, diagonal_M, scalar_M, d):
+        if diagonal_M:
+            M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
+                self.ts.device
+            )
+            derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
+                self.ts.device
+            )
+
+        elif scalar_M:
+            M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
+                self.ts.device
+            )
+            derivative_M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
+                self.ts.device
+            )
+
+        else:
+            M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
+                self.ts.device
+            )
+            derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
+                self.ts.device
+            )
+
+        s_vector = []
+        t_vector = []
+        for k, t in enumerate(self.ts):
+            s_vector.append(
+                torch.linspace(t, self.T, self.num_steps + 1 - k).to(self.ts.device)
+            )
+            t_vector.append(
+                t * torch.ones(self.num_steps + 1 - k).to(self.ts.device)
+            )
+        s_vector = torch.cat(s_vector)
+        t_vector = torch.cat(t_vector)
+
+        M_evals_all = self.neural_sde.M(
+            t_vector,
+            s_vector,
         )
+        
+        counter = 0
+        for k, t in enumerate(self.ts):
+            if diagonal_M:
+                M_evals[k, k:, :] = M_evals_all[
+                    counter : (counter + self.num_steps + 1 - k), :
+                ]
+                derivative_M_evals[k, k:-1, :] = (M_evals_all[
+                    counter + 1 : (counter + self.num_steps + 1 - k), :
+                ] - M_evals_all[
+                    counter : (counter + self.num_steps - k), :
+                ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])[:,None]
+            elif scalar_M:
+                M_evals[k, k:] = M_evals_all[
+                    counter : (counter + self.num_steps + 1 - k)
+                ]
+                derivative_M_evals[k, k:-1] = (M_evals_all[
+                    counter + 1 : (counter + self.num_steps + 1 - k)
+                ] - M_evals_all[
+                    counter : (counter + self.num_steps - k)
+                ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])
+            else:
+                M_evals[k, k:, :, :] = M_evals_all[
+                    counter : (counter + self.num_steps + 1 - k), :, :
+                ]
+                derivative_M_evals[k, k:-1, :, :] = (M_evals_all[
+                    counter + 1 : (counter + self.num_steps + 1 - k), :, :
+                ] - M_evals_all[
+                    counter : (counter + self.num_steps - k), :, :
+                ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])[:,None,None]
+            counter += self.num_steps + 1 - k
+
+        return M_evals, derivative_M_evals
 
     def loss(
         self,
@@ -305,6 +409,7 @@ class SOC_Solver(nn.Module):
         compute_L2_error=False,
         optimal_control=None,
         compute_control_objective=False,
+        compute_exp_control_objective_STL=False,
         algorithm="SOCM_const_M",
         add_weights=False,
         total_n_samples=65536,
@@ -313,6 +418,7 @@ class SOC_Solver(nn.Module):
         use_warm_start=True,
         use_stopping_time=False,
         efficient_memory=False,
+        itr=0,
     ):
         if len(self.x0.shape) == 1:
             state0 = self.x0.repeat(batch_size, 1)
@@ -373,89 +479,7 @@ class SOC_Solver(nn.Module):
                     "ij,abj->abi", sigma_inverse_transpose, u_warm_start_eval
                 )
 
-        if algorithm == "SOCM_const_M":
-            sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
-            least_squares_target_integrand_term_1 = (
-                self.neural_sde.nabla_f(self.ts[0], states)
-            )[:-1, :, :]
-            least_squares_target_integrand_term_2 = -np.sqrt(self.lmbd) * torch.einsum(
-                "abij,abj->abi",
-                self.neural_sde.nabla_b(self.ts[0], states)[:-1, :, :, :],
-                torch.einsum("ij,abj->abi", sigma_inverse_transpose, noises),
-            )
-            least_squares_target_integrand_term_3 = -torch.einsum(
-                "abij,abj->abi",
-                self.neural_sde.nabla_b(self.ts[0], states)[:-1, :, :, :],
-                torch.einsum("ij,abj->abi", sigma_inverse_transpose, controls),
-            )
-            least_squares_target_terminal = self.neural_sde.nabla_g(states[-1, :, :])
-
-            dts = self.ts[1:] - self.ts[:-1]
-            least_squares_target_integrand_term_1_times_dt = torch.cat(
-                (
-                    torch.zeros_like(
-                        least_squares_target_integrand_term_1[0, :, :]
-                    ).unsqueeze(0),
-                    least_squares_target_integrand_term_1
-                    * dts.unsqueeze(1).unsqueeze(2),
-                ),
-                0,
-            )
-            least_squares_target_integrand_term_2_times_sqrt_dt = torch.cat(
-                (
-                    torch.zeros_like(
-                        least_squares_target_integrand_term_2[0, :, :]
-                    ).unsqueeze(0),
-                    least_squares_target_integrand_term_2
-                    * torch.sqrt(dts).unsqueeze(1).unsqueeze(2),
-                ),
-                0,
-            )
-            least_squares_target_integrand_term_3_times_dt = torch.cat(
-                (
-                    torch.zeros_like(
-                        least_squares_target_integrand_term_3[0, :, :]
-                    ).unsqueeze(0),
-                    least_squares_target_integrand_term_3
-                    * dts.unsqueeze(1).unsqueeze(2),
-                ),
-                0,
-            )
-
-            cumulative_sum_least_squares_term_1 = torch.sum(
-                least_squares_target_integrand_term_1_times_dt, dim=0
-            ).unsqueeze(0) - torch.cumsum(
-                least_squares_target_integrand_term_1_times_dt, dim=0
-            )
-            cumulative_sum_least_squares_term_2 = torch.sum(
-                least_squares_target_integrand_term_2_times_sqrt_dt, dim=0
-            ).unsqueeze(0) - torch.cumsum(
-                least_squares_target_integrand_term_2_times_sqrt_dt, dim=0
-            )
-            cumulative_sum_least_squares_term_3 = torch.sum(
-                least_squares_target_integrand_term_3_times_dt, dim=0
-            ).unsqueeze(0) - torch.cumsum(
-                least_squares_target_integrand_term_3_times_dt, dim=0
-            )
-            least_squares_target = (
-                cumulative_sum_least_squares_term_1
-                + cumulative_sum_least_squares_term_2
-                + cumulative_sum_least_squares_term_3
-                + least_squares_target_terminal.unsqueeze(0)
-            )
-            control_learned = -torch.einsum(
-                "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
-            )
-            control_target = -torch.einsum(
-                "ij,...j->...i", torch.transpose(self.sigma, 0, 1), least_squares_target
-            )
-
-            objective = torch.sum(
-                (control_learned - control_target) ** 2
-                * weight.unsqueeze(0).unsqueeze(2)
-            ) / (states.shape[0] * states.shape[1])
-
-        elif algorithm == "SOCM_exp":
+        if algorithm == "SOCM_exp":
             sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
             exp_factor = torch.exp(-self.gamma * self.ts)
             identity = torch.eye(d).to(self.x0.device)
@@ -578,94 +602,95 @@ class SOC_Solver(nn.Module):
             dts = self.ts[1:] - self.ts[:-1]
             identity = torch.eye(d).to(self.x0.device)
 
-            sum_M = lambda t, s: self.neural_sde.M(t, s).sum(dim=0)
+            M_evals, derivative_M_evals = self.M_matrix_and_derivative(diagonal_M, scalar_M, d)
+            # sum_M = lambda t, s: self.neural_sde.M(t, s).sum(dim=0)
 
-            if diagonal_M:
-                # derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
-                # derivative_M = lambda t, s: torch.transpose(derivative_M_0(t, s), 0, 1)
+            # if diagonal_M:
+            #     # derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
+            #     # derivative_M = lambda t, s: torch.transpose(derivative_M_0(t, s), 0, 1)
 
-                M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
-                    self.ts.device
-                )
-                derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
-                    self.ts.device
-                )
+            #     M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
+            #         self.ts.device
+            #     )
+            #     derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
+            #         self.ts.device
+            #     )
 
-            elif scalar_M:
-                # derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
-                # derivative_M = lambda t, s: derivative_M_0(t, s)
+            # elif scalar_M:
+            #     # derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
+            #     # derivative_M = lambda t, s: derivative_M_0(t, s)
 
-                M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
-                    self.ts.device
-                )
-                derivative_M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
-                    self.ts.device
-                )
+            #     M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
+            #         self.ts.device
+            #     )
+            #     derivative_M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
+            #         self.ts.device
+            #     )
 
-            else:
-                # derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
-                # derivative_M = lambda t, s: torch.transpose(
-                #     torch.transpose(derivative_M_0(t, s), 1, 2), 0, 1
-                # )
+            # else:
+            #     # derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
+            #     # derivative_M = lambda t, s: torch.transpose(
+            #     #     torch.transpose(derivative_M_0(t, s), 1, 2), 0, 1
+            #     # )
 
-                M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
-                    self.ts.device
-                )
-                derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
-                    self.ts.device
-                )
+            #     M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
+            #         self.ts.device
+            #     )
+            #     derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
+            #         self.ts.device
+            #     )
 
-            s_vector = []
-            t_vector = []
-            for k, t in enumerate(self.ts):
-                s_vector.append(
-                    torch.linspace(t, self.T, self.num_steps + 1 - k).to(self.ts.device)
-                )
-                t_vector.append(
-                    t * torch.ones(self.num_steps + 1 - k).to(self.ts.device)
-                )
-                if use_stopping_time:
-                    stopping_timestep_vector.append(
-                        stopping_timestep.unsqueeze(0).repeat(self.num_steps + 1 - k, 1)
-                    )
-            s_vector = torch.cat(s_vector)
-            t_vector = torch.cat(t_vector)
+            # s_vector = []
+            # t_vector = []
+            # for k, t in enumerate(self.ts):
+            #     s_vector.append(
+            #         torch.linspace(t, self.T, self.num_steps + 1 - k).to(self.ts.device)
+            #     )
+            #     t_vector.append(
+            #         t * torch.ones(self.num_steps + 1 - k).to(self.ts.device)
+            #     )
+            #     if use_stopping_time:
+            #         stopping_timestep_vector.append(
+            #             stopping_timestep.unsqueeze(0).repeat(self.num_steps + 1 - k, 1)
+            #         )
+            # s_vector = torch.cat(s_vector)
+            # t_vector = torch.cat(t_vector)
 
-            M_evals_all = self.neural_sde.M(
-                t_vector,
-                s_vector,
-            )
+            # M_evals_all = self.neural_sde.M(
+            #     t_vector,
+            #     s_vector,
+            # )
             
-            counter = 0
-            for k, t in enumerate(self.ts):
-                if diagonal_M:
-                    M_evals[k, k:, :] = M_evals_all[
-                        counter : (counter + self.num_steps + 1 - k), :
-                    ]
-                    derivative_M_evals[k, k:-1, :] = (M_evals_all[
-                        counter + 1 : (counter + self.num_steps + 1 - k), :
-                    ] - M_evals_all[
-                        counter : (counter + self.num_steps - k), :
-                    ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])[:,None]
-                elif scalar_M:
-                    M_evals[k, k:] = M_evals_all[
-                        counter : (counter + self.num_steps + 1 - k)
-                    ]
-                    derivative_M_evals[k, k:-1] = (M_evals_all[
-                        counter + 1 : (counter + self.num_steps + 1 - k)
-                    ] - M_evals_all[
-                        counter : (counter + self.num_steps - k)
-                    ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])
-                else:
-                    M_evals[k, k:, :, :] = M_evals_all[
-                        counter : (counter + self.num_steps + 1 - k), :, :
-                    ]
-                    derivative_M_evals[k, k:-1, :, :] = (M_evals_all[
-                        counter + 1 : (counter + self.num_steps + 1 - k), :, :
-                    ] - M_evals_all[
-                        counter : (counter + self.num_steps - k), :, :
-                    ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])[:,None,None]
-                counter += self.num_steps + 1 - k
+            # counter = 0
+            # for k, t in enumerate(self.ts):
+            #     if diagonal_M:
+            #         M_evals[k, k:, :] = M_evals_all[
+            #             counter : (counter + self.num_steps + 1 - k), :
+            #         ]
+            #         derivative_M_evals[k, k:-1, :] = (M_evals_all[
+            #             counter + 1 : (counter + self.num_steps + 1 - k), :
+            #         ] - M_evals_all[
+            #             counter : (counter + self.num_steps - k), :
+            #         ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])[:,None]
+            #     elif scalar_M:
+            #         M_evals[k, k:] = M_evals_all[
+            #             counter : (counter + self.num_steps + 1 - k)
+            #         ]
+            #         derivative_M_evals[k, k:-1] = (M_evals_all[
+            #             counter + 1 : (counter + self.num_steps + 1 - k)
+            #         ] - M_evals_all[
+            #             counter : (counter + self.num_steps - k)
+            #         ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])
+            #     else:
+            #         M_evals[k, k:, :, :] = M_evals_all[
+            #             counter : (counter + self.num_steps + 1 - k), :, :
+            #         ]
+            #         derivative_M_evals[k, k:-1, :, :] = (M_evals_all[
+            #             counter + 1 : (counter + self.num_steps + 1 - k), :, :
+            #         ] - M_evals_all[
+            #             counter : (counter + self.num_steps - k), :, :
+            #         ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])[:,None,None]
+            #     counter += self.num_steps + 1 - k
 
             # Compute terms corresponding to state and terminal costs
             if diagonal_M:
@@ -775,326 +800,329 @@ class SOC_Solver(nn.Module):
                     * weight.unsqueeze(0).unsqueeze(2)
                 ) / (states.shape[0] * states.shape[1])
 
-        elif not efficient_memory and algorithm in ["SOCM", "UW_SOCM", 
-                                                  "SOCM_sc", "UW_SOCM_sc", "SOCM_sc_2B", "UW_SOCM_sc_2B",
-                                                  "SOCM_diag", "UW_SOCM_diag", "SOCM_diag_2B", "UW_SOCM_diag_2B", 
-                                                  "SOCM_identity", "UW_SOCM_identity", 
-                                                  "UW_SOCM_no_v", "UW_SOCM_no_nabla_b_term", "UW_SOCM_no_noise"]:
-            if self.output_matrix:
-                diagonal_M = False
-                scalar_M = False
-            else:
-                diagonal_M = algorithm in ["SOCM_diag", "UW_SOCM_diag", "SOCM_diag_2B", "UW_SOCM_diag_2B"]
-                scalar_M = algorithm in ["SOCM_sc", "UW_SOCM_sc", "SOCM_sc_2B", "UW_SOCM_sc_2B", "SOCM_identity", "UW_SOCM_identity"]
-            sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
-            identity = torch.eye(d).to(self.x0.device)
+        # elif not efficient_memory and algorithm in ["SOCM", "UW_SOCM", 
+        #                                           "SOCM_sc", "UW_SOCM_sc", "SOCM_sc_2B", "UW_SOCM_sc_2B",
+        #                                           "SOCM_diag", "UW_SOCM_diag", "SOCM_diag_2B", "UW_SOCM_diag_2B", 
+        #                                           "SOCM_identity", "UW_SOCM_identity", 
+        #                                           "UW_SOCM_no_v", "UW_SOCM_no_nabla_b_term", "UW_SOCM_no_noise"]:
+        #     if self.output_matrix:
+        #         diagonal_M = False
+        #         scalar_M = False
+        #     else:
+        #         diagonal_M = algorithm in ["SOCM_diag", "UW_SOCM_diag", "SOCM_diag_2B", "UW_SOCM_diag_2B"]
+        #         scalar_M = algorithm in ["SOCM_sc", "UW_SOCM_sc", "SOCM_sc_2B", "UW_SOCM_sc_2B", "SOCM_identity", "UW_SOCM_identity"]
+        #     sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
+        #     identity = torch.eye(d).to(self.x0.device)
 
-            if use_stopping_time:
-                sum_M = lambda t, s, stopping_timestep_values: self.neural_sde.M(
-                    t, s, stopping_timestep_values
-                ).sum(dim=0)
+        #     if use_stopping_time:
+        #         sum_M = lambda t, s, stopping_timestep_values: self.neural_sde.M(
+        #             t, s, stopping_timestep_values
+        #         ).sum(dim=0)
 
-                derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
-                derivative_M = lambda t, s, stopping_timestep_values: torch.transpose(
-                    torch.transpose(
-                        torch.transpose(
-                            derivative_M_0(t, s, stopping_timestep_values), 2, 3
-                        ),
-                        1,
-                        2,
-                    ),
-                    0,
-                    1,
-                )
+        #         derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
+        #         derivative_M = lambda t, s, stopping_timestep_values: torch.transpose(
+        #             torch.transpose(
+        #                 torch.transpose(
+        #                     derivative_M_0(t, s, stopping_timestep_values), 2, 3
+        #                 ),
+        #                 1,
+        #                 2,
+        #             ),
+        #             0,
+        #             1,
+        #         )
 
-                M_evals = torch.zeros(len(self.ts), len(self.ts), batch_size, d, d).to(
-                    self.ts.device
-                )
-                derivative_M_evals = torch.zeros(
-                    len(self.ts), len(self.ts), batch_size, d, d
-                ).to(self.ts.device)
+        #         M_evals = torch.zeros(len(self.ts), len(self.ts), batch_size, d, d).to(
+        #             self.ts.device
+        #         )
+        #         derivative_M_evals = torch.zeros(
+        #             len(self.ts), len(self.ts), batch_size, d, d
+        #         ).to(self.ts.device)
 
-            else:
-                sum_M = lambda t, s: self.neural_sde.M(t, s).sum(dim=0)
+        #     else:
+        #         sum_M = lambda t, s: self.neural_sde.M(t, s).sum(dim=0)
 
-                if diagonal_M:
-                    derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
-                    derivative_M = lambda t, s: torch.transpose(derivative_M_0(t, s), 0, 1)
+        #         if diagonal_M:
+        #             derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
+        #             derivative_M = lambda t, s: torch.transpose(derivative_M_0(t, s), 0, 1)
 
-                    M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
-                        self.ts.device
-                    )
-                    derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
-                        self.ts.device
-                    )
+        #             M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
+        #                 self.ts.device
+        #             )
+        #             derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
+        #                 self.ts.device
+        #             )
 
-                elif scalar_M:
-                    derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
-                    derivative_M = lambda t, s: derivative_M_0(t, s)
+        #         elif scalar_M:
+        #             derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
+        #             derivative_M = lambda t, s: derivative_M_0(t, s)
 
-                    M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
-                        self.ts.device
-                    )
-                    derivative_M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
-                        self.ts.device
-                    )
+        #             M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
+        #                 self.ts.device
+        #             )
+        #             derivative_M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
+        #                 self.ts.device
+        #             )
 
-                else:
-                    derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
-                    derivative_M = lambda t, s: torch.transpose(
-                        torch.transpose(derivative_M_0(t, s), 1, 2), 0, 1
-                    )
+        #         else:
+        #             derivative_M_0 = functorch.jacrev(sum_M, argnums=1)
+        #             derivative_M = lambda t, s: torch.transpose(
+        #                 torch.transpose(derivative_M_0(t, s), 1, 2), 0, 1
+        #             )
 
-                    M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
-                        self.ts.device
-                    )
-                    derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
-                        self.ts.device
-                    )
+        #             M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
+        #                 self.ts.device
+        #             )
+        #             derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
+        #                 self.ts.device
+        #             )
 
-            if use_stopping_time:
-                stopping_function_output_int = (self.neural_sde.Phi(states) > 0).to(
-                    torch.int
-                )
-                stopping_timestep = (
-                    torch.sum(stopping_function_output_int, dim=0) - 1
-                ) / (len(self.ts) - 1)
-                stopping_timestep_vector = []
+        #     if use_stopping_time:
+        #         stopping_function_output_int = (self.neural_sde.Phi(states) > 0).to(
+        #             torch.int
+        #         )
+        #         stopping_timestep = (
+        #             torch.sum(stopping_function_output_int, dim=0) - 1
+        #         ) / (len(self.ts) - 1)
+        #         stopping_timestep_vector = []
 
-            s_vector = []
-            t_vector = []
-            for k, t in enumerate(self.ts):
-                s_vector.append(
-                    torch.linspace(t, self.T, self.num_steps + 1 - k).to(self.ts.device)
-                )
-                t_vector.append(
-                    t * torch.ones(self.num_steps + 1 - k).to(self.ts.device)
-                )
-                if use_stopping_time:
-                    stopping_timestep_vector.append(
-                        stopping_timestep.unsqueeze(0).repeat(self.num_steps + 1 - k, 1)
-                    )
-            s_vector = torch.cat(s_vector)
-            t_vector = torch.cat(t_vector)
-            if use_stopping_time:
-                stopping_timestep_vector = torch.cat(stopping_timestep_vector, dim=0)
-                M_evals_all = self.neural_sde.M(
-                    t_vector, s_vector, stopping_timestep_vector
-                )
-                derivative_M_evals_all = torch.nan_to_num(
-                    derivative_M(t_vector, s_vector, stopping_timestep_vector)
-                )
-                counter = 0
-                for k, t in enumerate(self.ts):
-                    M_evals[k, k:, :, :, :] = M_evals_all[
-                        counter : (counter + self.num_steps + 1 - k), :, :, :
-                    ]
-                    derivative_M_evals[k, k:, :, :, :] = derivative_M_evals_all[
-                        counter : (counter + self.num_steps + 1 - k), :, :, :
-                    ]
-                    counter += self.num_steps + 1 - k
-            else:
-                M_evals_all = self.neural_sde.M(
-                    t_vector,
-                    s_vector,
-                )
-                derivative_M_evals_all = derivative_M(
-                    t_vector,
-                    s_vector,
-                )
-                counter = 0
-                for k, t in enumerate(self.ts):
-                    if diagonal_M:
-                        M_evals[k, k:, :] = M_evals_all[
-                            counter : (counter + self.num_steps + 1 - k), :
-                        ]
-                        derivative_M_evals[k, k:, :] = derivative_M_evals_all[
-                            counter : (counter + self.num_steps + 1 - k), :
-                        ]
-                    elif scalar_M:
-                        M_evals[k, k:] = M_evals_all[
-                            counter : (counter + self.num_steps + 1 - k)
-                        ]
-                        derivative_M_evals[k, k:] = derivative_M_evals_all[
-                            counter : (counter + self.num_steps + 1 - k)
-                        ]
-                    else:
-                        M_evals[k, k:, :, :] = M_evals_all[
-                            counter : (counter + self.num_steps + 1 - k), :, :
-                        ]
-                        derivative_M_evals[k, k:, :, :] = derivative_M_evals_all[
-                            counter : (counter + self.num_steps + 1 - k), :, :
-                        ]
+        #     s_vector = []
+        #     t_vector = []
+        #     for k, t in enumerate(self.ts):
+        #         s_vector.append(
+        #             torch.linspace(t, self.T, self.num_steps + 1 - k).to(self.ts.device)
+        #         )
+        #         t_vector.append(
+        #             t * torch.ones(self.num_steps + 1 - k).to(self.ts.device)
+        #         )
+        #         if use_stopping_time:
+        #             stopping_timestep_vector.append(
+        #                 stopping_timestep.unsqueeze(0).repeat(self.num_steps + 1 - k, 1)
+        #             )
+        #     s_vector = torch.cat(s_vector)
+        #     t_vector = torch.cat(t_vector)
+        #     if use_stopping_time:
+        #         stopping_timestep_vector = torch.cat(stopping_timestep_vector, dim=0)
+        #         M_evals_all = self.neural_sde.M(
+        #             t_vector, s_vector, stopping_timestep_vector
+        #         )
+        #         derivative_M_evals_all = torch.nan_to_num(
+        #             derivative_M(t_vector, s_vector, stopping_timestep_vector)
+        #         )
+        #         counter = 0
+        #         for k, t in enumerate(self.ts):
+        #             M_evals[k, k:, :, :, :] = M_evals_all[
+        #                 counter : (counter + self.num_steps + 1 - k), :, :, :
+        #             ]
+        #             derivative_M_evals[k, k:, :, :, :] = derivative_M_evals_all[
+        #                 counter : (counter + self.num_steps + 1 - k), :, :, :
+        #             ]
+        #             counter += self.num_steps + 1 - k
+        #     else:
+        #         M_evals_all = self.neural_sde.M(
+        #             t_vector,
+        #             s_vector,
+        #         )
+        #         derivative_M_evals_all = derivative_M(
+        #             t_vector,
+        #             s_vector,
+        #         )
+        #         counter = 0
+        #         for k, t in enumerate(self.ts):
+        #             if diagonal_M:
+        #                 M_evals[k, k:, :] = M_evals_all[
+        #                     counter : (counter + self.num_steps + 1 - k), :
+        #                 ]
+        #                 derivative_M_evals[k, k:, :] = derivative_M_evals_all[
+        #                     counter : (counter + self.num_steps + 1 - k), :
+        #                 ]
+        #             elif scalar_M:
+        #                 M_evals[k, k:] = M_evals_all[
+        #                     counter : (counter + self.num_steps + 1 - k)
+        #                 ]
+        #                 derivative_M_evals[k, k:] = derivative_M_evals_all[
+        #                     counter : (counter + self.num_steps + 1 - k)
+        #                 ]
+        #             else:
+        #                 M_evals[k, k:, :, :] = M_evals_all[
+        #                     counter : (counter + self.num_steps + 1 - k), :, :
+        #                 ]
+        #                 derivative_M_evals[k, k:, :, :] = derivative_M_evals_all[
+        #                     counter : (counter + self.num_steps + 1 - k), :, :
+        #                 ]
 
-            if use_stopping_time:
-                least_squares_target_integrand_term_1 = torch.einsum(
-                    "ijmkl,jml->ijmk",
-                    M_evals,
-                    self.neural_sde.nabla_f(self.ts, states),
-                )[:, :-1, :, :]
-            else:
-                if diagonal_M:
-                    least_squares_target_integrand_term_1 = (M_evals[:, :, None, :]
-                                                             * self.neural_sde.nabla_f(self.ts, states)[None, :, :, :])[:, :-1, :, :]
-                elif scalar_M:
-                    least_squares_target_integrand_term_1 = (M_evals[:, :, None, None]
-                                                             * self.neural_sde.nabla_f(self.ts, states)[None, :, :, :])[:, :-1, :, :]
-                else:
-                    least_squares_target_integrand_term_1 = torch.einsum(
-                        "ijkl,jml->ijmk",
-                        M_evals,
-                        self.neural_sde.nabla_f(self.ts, states),
-                    )[:, :-1, :, :]
+        #     if use_stopping_time:
+        #         least_squares_target_integrand_term_1 = torch.einsum(
+        #             "ijmkl,jml->ijmk",
+        #             M_evals,
+        #             self.neural_sde.nabla_f(self.ts, states),
+        #         )[:, :-1, :, :]
+        #     else:
+        #         if diagonal_M:
+        #             least_squares_target_integrand_term_1 = (M_evals[:, :, None, :]
+        #                                                      * self.neural_sde.nabla_f(self.ts, states)[None, :, :, :])[:, :-1, :, :]
+        #         elif scalar_M:
+        #             least_squares_target_integrand_term_1 = (M_evals[:, :, None, None]
+        #                                                      * self.neural_sde.nabla_f(self.ts, states)[None, :, :, :])[:, :-1, :, :]
+        #         else:
+        #             least_squares_target_integrand_term_1 = torch.einsum(
+        #                 "ijkl,jml->ijmk",
+        #                 M_evals,
+        #                 self.neural_sde.nabla_f(self.ts, states),
+        #             )[:, :-1, :, :]
 
-            if use_stopping_time:
-                M_nabla_b_term = (
-                    torch.einsum(
-                        "ijmkl,jmln->ijmkn",
-                        M_evals,
-                        self.neural_sde.nabla_b(self.ts, states),
-                    )
-                    - derivative_M_evals
-                )
-                least_squares_target_integrand_term_2 = -np.sqrt(
-                    self.lmbd
-                ) * torch.einsum(
-                    "ijmkn,jmn->ijmk",
-                    M_nabla_b_term[:, :-1, :, :, :],
-                    torch.einsum("ij,abj->abi", sigma_inverse_transpose, noises),
-                )
-            else:
-                if diagonal_M:
-                    M_nabla_b_term = (M_evals[:, :, None, :, None] * self.neural_sde.nabla_b(self.ts, states)[None, :, :, :, :] 
-                                      - derivative_M_evals[:, :, None, :, None])
-                elif scalar_M:
-                    M_nabla_b_term = (M_evals[:, :, None, None, None] * self.neural_sde.nabla_b(self.ts, states)[None, :, :, :, :] 
-                                      - derivative_M_evals[:, :, None, None, None])
-                else:
-                    M_nabla_b_term = torch.einsum(
-                        "ijkl,jmln->ijmkn",
-                        M_evals,
-                        self.neural_sde.nabla_b(self.ts, states),
-                    ) - derivative_M_evals.unsqueeze(2)
-                least_squares_target_integrand_term_2 = -np.sqrt(
-                    self.lmbd
-                ) * torch.einsum(
-                    "ijmkn,jmn->ijmk",
-                    M_nabla_b_term[:, :-1, :, :, :],
-                    torch.einsum("ij,abj->abi", sigma_inverse_transpose, noises),
-                )
-            if algorithm == "UW_SOCM_no_nabla_b_term" or algorithm == "UW_SOCM_no_noise":
-                least_squares_target_integrand_term_2 = torch.zeros_like(least_squares_target_integrand_term_2)
+        #     if use_stopping_time:
+        #         M_nabla_b_term = (
+        #             torch.einsum(
+        #                 "ijmkl,jmln->ijmkn",
+        #                 M_evals,
+        #                 self.neural_sde.nabla_b(self.ts, states),
+        #             )
+        #             - derivative_M_evals
+        #         )
+        #         least_squares_target_integrand_term_2 = -np.sqrt(
+        #             self.lmbd
+        #         ) * torch.einsum(
+        #             "ijmkn,jmn->ijmk",
+        #             M_nabla_b_term[:, :-1, :, :, :],
+        #             torch.einsum("ij,abj->abi", sigma_inverse_transpose, noises),
+        #         )
+        #     else:
+        #         if diagonal_M:
+        #             M_nabla_b_term = (M_evals[:, :, None, :, None] * self.neural_sde.nabla_b(self.ts, states)[None, :, :, :, :] 
+        #                               - derivative_M_evals[:, :, None, :, None])
+        #         elif scalar_M:
+        #             M_nabla_b_term = (M_evals[:, :, None, None, None] * self.neural_sde.nabla_b(self.ts, states)[None, :, :, :, :] 
+        #                               - derivative_M_evals[:, :, None, None, None])
+        #         else:
+        #             M_nabla_b_term = torch.einsum(
+        #                 "ijkl,jmln->ijmkn",
+        #                 M_evals,
+        #                 self.neural_sde.nabla_b(self.ts, states),
+        #             ) - derivative_M_evals.unsqueeze(2)
+        #         least_squares_target_integrand_term_2 = -np.sqrt(
+        #             self.lmbd
+        #         ) * torch.einsum(
+        #             "ijmkn,jmn->ijmk",
+        #             M_nabla_b_term[:, :-1, :, :, :],
+        #             torch.einsum("ij,abj->abi", sigma_inverse_transpose, noises),
+        #         )
+        #     if algorithm == "UW_SOCM_no_nabla_b_term" or algorithm == "UW_SOCM_no_noise":
+        #         least_squares_target_integrand_term_2 = torch.zeros_like(least_squares_target_integrand_term_2)
 
-            least_squares_target_integrand_term_3 = -torch.einsum(
-                "ijmkn,jmn->ijmk",
-                M_nabla_b_term[:, :-1, :, :, :],
-                torch.einsum("ij,abj->abi", sigma_inverse_transpose, controls),
-            )
-            if algorithm == "UW_SOCM_no_v" or algorithm == "UW_SOCM_no_nabla_b_term":
-                least_squares_target_integrand_term_3 = torch.zeros_like(least_squares_target_integrand_term_3)
+        #     least_squares_target_integrand_term_3 = -torch.einsum(
+        #         "ijmkn,jmn->ijmk",
+        #         M_nabla_b_term[:, :-1, :, :, :],
+        #         torch.einsum("ij,abj->abi", sigma_inverse_transpose, controls),
+        #     )
+        #     if algorithm == "UW_SOCM_no_v" or algorithm == "UW_SOCM_no_nabla_b_term":
+        #         least_squares_target_integrand_term_3 = torch.zeros_like(least_squares_target_integrand_term_3)
 
-            if use_stopping_time:
-                M_evals_final = M_evals[:, -1, :, :, :]
-                least_squares_target_terminal = torch.einsum(
-                    "imkl,ml->imk",
-                    M_evals_final,
-                    self.neural_sde.nabla_g(states[-1, :, :]),
-                )
-            else:
-                if diagonal_M:
-                    M_evals_final = M_evals[:, -1, :]
-                    least_squares_target_terminal = (M_evals_final[:, None, :] * self.neural_sde.nabla_g(states[-1, :, :])[None, :, :])
-                elif scalar_M:
-                    M_evals_final = M_evals[:, -1]
-                    least_squares_target_terminal = (M_evals_final[:, None, None] * self.neural_sde.nabla_g(states[-1, :, :])[None, :, :])
-                else:
-                    M_evals_final = M_evals[:, -1, :, :]
-                    least_squares_target_terminal = torch.einsum(
-                        "ikl,ml->imk",
-                        M_evals_final,
-                        self.neural_sde.nabla_g(states[-1, :, :]),
-                    )
+        #     if use_stopping_time:
+        #         M_evals_final = M_evals[:, -1, :, :, :]
+        #         least_squares_target_terminal = torch.einsum(
+        #             "imkl,ml->imk",
+        #             M_evals_final,
+        #             self.neural_sde.nabla_g(states[-1, :, :]),
+        #         )
+        #     else:
+        #         if diagonal_M:
+        #             M_evals_final = M_evals[:, -1, :]
+        #             least_squares_target_terminal = (M_evals_final[:, None, :] * self.neural_sde.nabla_g(states[-1, :, :])[None, :, :])
+        #         elif scalar_M:
+        #             M_evals_final = M_evals[:, -1]
+        #             least_squares_target_terminal = (M_evals_final[:, None, None] * self.neural_sde.nabla_g(states[-1, :, :])[None, :, :])
+        #         else:
+        #             M_evals_final = M_evals[:, -1, :, :]
+        #             least_squares_target_terminal = torch.einsum(
+        #                 "ikl,ml->imk",
+        #                 M_evals_final,
+        #                 self.neural_sde.nabla_g(states[-1, :, :]),
+        #             )
 
-            if use_stopping_time:
-                least_squares_target_integrand_term_1_times_dt = (
-                    least_squares_target_integrand_term_1
-                    * fractional_timesteps.unsqueeze(0).unsqueeze(3)
-                )
-                least_squares_target_integrand_term_2_times_sqrt_dt = (
-                    least_squares_target_integrand_term_2
-                    * torch.sqrt(fractional_timesteps).unsqueeze(0).unsqueeze(3)
-                )
-                least_squares_target_integrand_term_3_times_dt = (
-                    least_squares_target_integrand_term_3
-                    * fractional_timesteps.unsqueeze(0).unsqueeze(3)
-                )
-            else:
-                dts = self.ts[1:] - self.ts[:-1]
-                least_squares_target_integrand_term_1_times_dt = (
-                    least_squares_target_integrand_term_1
-                    * dts.unsqueeze(1).unsqueeze(2).unsqueeze(0)
-                )
-                least_squares_target_integrand_term_2_times_sqrt_dt = (
-                    least_squares_target_integrand_term_2
-                    * torch.sqrt(dts).unsqueeze(1).unsqueeze(2)
-                )
-                least_squares_target_integrand_term_3_times_dt = (
-                    least_squares_target_integrand_term_3 * dts.unsqueeze(1).unsqueeze(2)
-                )
+        #     if use_stopping_time:
+        #         least_squares_target_integrand_term_1_times_dt = (
+        #             least_squares_target_integrand_term_1
+        #             * fractional_timesteps.unsqueeze(0).unsqueeze(3)
+        #         )
+        #         least_squares_target_integrand_term_2_times_sqrt_dt = (
+        #             least_squares_target_integrand_term_2
+        #             * torch.sqrt(fractional_timesteps).unsqueeze(0).unsqueeze(3)
+        #         )
+        #         least_squares_target_integrand_term_3_times_dt = (
+        #             least_squares_target_integrand_term_3
+        #             * fractional_timesteps.unsqueeze(0).unsqueeze(3)
+        #         )
+        #     else:
+        #         dts = self.ts[1:] - self.ts[:-1]
+        #         least_squares_target_integrand_term_1_times_dt = (
+        #             least_squares_target_integrand_term_1
+        #             * dts.unsqueeze(1).unsqueeze(2).unsqueeze(0)
+        #         )
+        #         least_squares_target_integrand_term_2_times_sqrt_dt = (
+        #             least_squares_target_integrand_term_2
+        #             * torch.sqrt(dts).unsqueeze(1).unsqueeze(2)
+        #         )
+        #         least_squares_target_integrand_term_3_times_dt = (
+        #             least_squares_target_integrand_term_3 * dts.unsqueeze(1).unsqueeze(2)
+        #         )
 
-            cumsum_least_squares_term_1 = torch.sum(
-                least_squares_target_integrand_term_1_times_dt, dim=1
-            )
-            cumsum_least_squares_term_2 = torch.sum(
-                least_squares_target_integrand_term_2_times_sqrt_dt, dim=1
-            )
-            cumsum_least_squares_term_3 = torch.sum(
-                least_squares_target_integrand_term_3_times_dt, dim=1
-            )
+        #     cumsum_least_squares_term_1 = torch.sum(
+        #         least_squares_target_integrand_term_1_times_dt, dim=1
+        #     )
+        #     cumsum_least_squares_term_2 = torch.sum(
+        #         least_squares_target_integrand_term_2_times_sqrt_dt, dim=1
+        #     )
+        #     cumsum_least_squares_term_3 = torch.sum(
+        #         least_squares_target_integrand_term_3_times_dt, dim=1
+        #     )
 
-            least_squares_target = (
-                cumsum_least_squares_term_1
-                + cumsum_least_squares_term_2
-                + cumsum_least_squares_term_3
-                + least_squares_target_terminal
-            )
+        #     least_squares_target = (
+        #         cumsum_least_squares_term_1
+        #         + cumsum_least_squares_term_2
+        #         + cumsum_least_squares_term_3
+        #         + least_squares_target_terminal
+        #     )
 
-            if use_stopping_time:
-                control_learned = -unsqueezed_stop_indicators * torch.einsum(
-                    "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
-                )
-                control_target = -unsqueezed_stop_indicators * torch.einsum(
-                    "ij,...j->...i",
-                    torch.transpose(self.sigma, 0, 1),
-                    least_squares_target,
-                )
-            else:
-                control_learned = -torch.einsum(
-                    "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
-                )
-                control_target = -torch.einsum(
-                    "ij,...j->...i",
-                    torch.transpose(self.sigma, 0, 1),
-                    least_squares_target,
-                )
+        #     if use_stopping_time:
+        #         control_learned = -unsqueezed_stop_indicators * torch.einsum(
+        #             "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
+        #         )
+        #         control_target = -unsqueezed_stop_indicators * torch.einsum(
+        #             "ij,...j->...i",
+        #             torch.transpose(self.sigma, 0, 1),
+        #             least_squares_target,
+        #         )
+        #     else:
+        #         control_learned = -torch.einsum(
+        #             "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
+        #         )
+        #         control_target = -torch.einsum(
+        #             "ij,...j->...i",
+        #             torch.transpose(self.sigma, 0, 1),
+        #             least_squares_target,
+        #         )
 
-            if use_stopping_time:
-                objective = torch.sum(
-                    (control_learned - control_target) ** 2
-                    * weight.unsqueeze(0).unsqueeze(2)
-                ) / (torch.sum(stop_indicators))
-            else:
-                if algorithm in ["UW_SOCM", "UW_SOCM_sc", "UW_SOCM_sc_2B", "UW_SOCM_diag", "UW_SOCM_diag_2B", "UW_SOCM_identity", "UW_SOCM_no_v", "UW_SOCM_no_nabla_b_term"]:
-                    objective = torch.sum(
-                        (control_learned - control_target) ** 2
-                    ) / (states.shape[0] * states.shape[1])
-                else:
-                    objective = torch.sum(
-                        (control_learned - control_target) ** 2
-                        * weight.unsqueeze(0).unsqueeze(2)
-                    ) / (states.shape[0] * states.shape[1])
+        #     if use_stopping_time:
+        #         objective = torch.sum(
+        #             (control_learned - control_target) ** 2
+        #             * weight.unsqueeze(0).unsqueeze(2)
+        #         ) / (torch.sum(stop_indicators))
+        #     else:
+        #         if algorithm in ["UW_SOCM", "UW_SOCM_sc", "UW_SOCM_sc_2B", "UW_SOCM_diag", "UW_SOCM_diag_2B", "UW_SOCM_identity", "UW_SOCM_no_v", "UW_SOCM_no_nabla_b_term"]:
+        #             objective = torch.sum(
+        #                 (control_learned - control_target) ** 2
+        #             ) / (states.shape[0] * states.shape[1])
+        #         else:
+        #             objective = torch.sum(
+        #                 (control_learned - control_target) ** 2
+        #                 * weight.unsqueeze(0).unsqueeze(2)
+        #             ) / (states.shape[0] * states.shape[1])
 
-        elif algorithm == "SOCM_adjoint" or algorithm == "work_adjoint" or algorithm == "work_adjoint_STL":
+        elif algorithm in ["SOCM_adjoint", "work_adjoint", "work_adjoint_STL", 
+                           "UW_SOCM_plus", "UW_SOCM_plus_STL", 
+                           "UW_SOCM_plus_diag", "UW_SOCM_plus_diag_STL", 
+                           "UW_SOCM_plus_sc", "UW_SOCM_plus_sc_STL"]:
             nabla_f_evals = self.neural_sde.nabla_f(self.ts, states)
             nabla_b_evals = self.neural_sde.nabla_b(self.ts, states)
             nabla_g_evals = self.neural_sde.nabla_g(states[-1, :, :])
@@ -1117,7 +1145,7 @@ class SOC_Solver(nn.Module):
             for k in range(1,len(self.ts)):
                 a += self.dt * (nabla_f_evals[-1-k, :, :] + torch.einsum("mkl,ml->mk", nabla_b_evals[-1-k, :, :, :], a))
 
-                if algorithm == "work_adjoint_STL":
+                if algorithm == "work_adjoint_STL" or algorithm == "UW_SOCM_plus_STL":
                     # Check if states requires grad
                     if not states.requires_grad:
                         states.requires_grad = True
@@ -1127,9 +1155,73 @@ class SOC_Solver(nn.Module):
 
                 a_vectors[-1-k, :, :] = a
 
-            control_learned = -torch.einsum(
-                    "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
+            if algorithm in ["UW_SOCM_plus", "UW_SOCM_plus_STL",
+                             "UW_SOCM_plus_diag", "UW_SOCM_plus_diag_STL", 
+                             "UW_SOCM_plus_sc", "UW_SOCM_plus_sc_STL"] and itr > 4999:
+                diagonal_M = algorithm in ["UW_SOCM_plus_diag", "UW_SOCM_plus_diag_STL"]
+                scalar_M = algorithm in ["UW_SOCM_plus_sc", "UW_SOCM_plus_sc_STL"]
+                M_evals, derivative_M_evals = self.M_matrix_and_derivative(diagonal_M, scalar_M, d)
+                dts = self.ts[1:] - self.ts[:-1]
+                sigma_inverse_transpose = torch.transpose(torch.inverse(self.sigma), 0, 1)
+
+                # Compute the remaining term
+                def control_autograd_arg(ts, states, direction_vector):
+                    output = torch.sum((self.neural_sde.b(self.ts, states) 
+                                        )[:-1,:,:] * torch.einsum("ij,abj->abi", sigma_inverse_transpose, direction_vector), dim=2)
+                    return output
+
+                direction_vector = noises * torch.sqrt(self.lmbd * dts).unsqueeze(1).unsqueeze(2) + controls * dts.unsqueeze(1).unsqueeze(2)
+                # Check if states requires grad
+                if not states.requires_grad:
+                    states.requires_grad = True
+
+                nabla_control_noise = torch.autograd.grad(control_autograd_arg(self.ts, states, direction_vector).sum(), states)[0]
+                states.requires_grad = False
+
+                if diagonal_M:
+                    least_squares_target_integrand_term_2 = -(
+                        M_evals[:,:-1,None,:] * nabla_control_noise[None,:-1,:,:]
+                    )
+                    least_squares_target_integrand_term_3 = (
+                        derivative_M_evals[:,:-1,None,:]
+                        * torch.einsum("ij,abj->abi", sigma_inverse_transpose, direction_vector)[None,:,:,:]
+                    )
+                elif scalar_M:
+                    least_squares_target_integrand_term_2 = -(
+                        M_evals[:,:-1,None,None] * nabla_control_noise[None,:-1,:,:]
+                    )
+                    least_squares_target_integrand_term_3 = (
+                        derivative_M_evals[:,:-1,None,None]
+                        * torch.einsum("ij,abj->abi", sigma_inverse_transpose, direction_vector)[None,:,:,:]
+                    )
+                else:
+                    least_squares_target_integrand_term_2 = -torch.einsum(
+                        "ijkl,jml->ijmk",
+                        M_evals[:,:-1,:,:],
+                        nabla_control_noise[:-1,:,:],
+                    )
+                    least_squares_target_integrand_term_3 = torch.einsum(
+                        "ijkl,jml->ijmk",
+                        derivative_M_evals[:,:-1,:,:],
+                        torch.einsum("ij,abj->abi", sigma_inverse_transpose, direction_vector)
+                    )
+
+                least_squares_target_integrand_term_2_3_times_sqrt_dt = (
+                    least_squares_target_integrand_term_2
+                    + least_squares_target_integrand_term_3
                 )
+
+                cumsum_least_squares_term_2_3 = torch.sum(
+                    least_squares_target_integrand_term_2_3_times_sqrt_dt, dim=1
+                )
+
+                # print(f'a_vectors.shape: {a_vectors.shape}, cumsum_least_squares_term_2_3.shape: {cumsum_least_squares_term_2_3.shape}')
+                print(f'torch.norm(a_vectors): {torch.norm(a_vectors)}, torch.norm(cumsum_least_squares_term_2_3): {torch.norm(cumsum_least_squares_term_2_3)}')
+                a_vectors += cumsum_least_squares_term_2_3
+
+            control_learned = -torch.einsum(
+                "ij,...j->...i", torch.transpose(self.sigma, 0, 1), nabla_V
+            )
             control_target = -torch.einsum(
                 "ij,...j->...i",
                 torch.transpose(self.sigma, 0, 1),
@@ -1229,81 +1321,82 @@ class SOC_Solver(nn.Module):
             identity = torch.eye(d).to(self.x0.device)
             dts = self.ts[1:] - self.ts[:-1]
 
-            if diagonal_M:
-                M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
-                    self.ts.device
-                )
-                derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
-                    self.ts.device
-                )
+            M_evals, derivative_M_evals = self.M_matrix_and_derivative(diagonal_M, scalar_M, d)
+            # if diagonal_M:
+            #     M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
+            #         self.ts.device
+            #     )
+            #     derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
+            #         self.ts.device
+            #     )
 
-            elif scalar_M:
-                M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
-                    self.ts.device
-                )
-                derivative_M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
-                    self.ts.device
-                )
+            # elif scalar_M:
+            #     M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
+            #         self.ts.device
+            #     )
+            #     derivative_M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
+            #         self.ts.device
+            #     )
 
-            else:
-                M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
-                    self.ts.device
-                )
-                derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
-                    self.ts.device
-                )
+            # else:
+            #     M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
+            #         self.ts.device
+            #     )
+            #     derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
+            #         self.ts.device
+            #     )
 
-            s_vector = []
-            t_vector = []
-            for k, t in enumerate(self.ts):
-                s_vector.append(
-                    torch.linspace(t, self.T, self.num_steps + 1 - k).to(self.ts.device)
-                )
-                t_vector.append(
-                    t * torch.ones(self.num_steps + 1 - k).to(self.ts.device)
-                )
-                if use_stopping_time:
-                    stopping_timestep_vector.append(
-                        stopping_timestep.unsqueeze(0).repeat(self.num_steps + 1 - k, 1)
-                    )
-            s_vector = torch.cat(s_vector)
-            t_vector = torch.cat(t_vector)
+            # s_vector = []
+            # t_vector = []
+            # for k, t in enumerate(self.ts):
+            #     s_vector.append(
+            #         torch.linspace(t, self.T, self.num_steps + 1 - k).to(self.ts.device)
+            #     )
+            #     t_vector.append(
+            #         t * torch.ones(self.num_steps + 1 - k).to(self.ts.device)
+            #     )
+            #     if use_stopping_time:
+            #         stopping_timestep_vector.append(
+            #             stopping_timestep.unsqueeze(0).repeat(self.num_steps + 1 - k, 1)
+            #         )
+            # s_vector = torch.cat(s_vector)
+            # t_vector = torch.cat(t_vector)
 
-            M_evals_all = self.neural_sde.M(
-                t_vector,
-                s_vector,
-            )
+            # M_evals_all = self.neural_sde.M(
+            #     t_vector,
+            #     s_vector,
+            # )
 
-            counter = 0
-            for k, t in enumerate(self.ts):
-                if diagonal_M:
-                    M_evals[k, k:, :] = M_evals_all[
-                        counter : (counter + self.num_steps + 1 - k), :
-                    ]
-                    derivative_M_evals[k, k:-1, :] = (M_evals_all[
-                        counter + 1 : (counter + self.num_steps + 1 - k), :
-                    ] - M_evals_all[
-                        counter : (counter + self.num_steps - k), :
-                    ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])[:,None]
-                elif scalar_M:
-                    M_evals[k, k:] = M_evals_all[
-                        counter : (counter + self.num_steps + 1 - k)
-                    ]
-                    derivative_M_evals[k, k:-1] = (M_evals_all[
-                        counter + 1 : (counter + self.num_steps + 1 - k)
-                    ] - M_evals_all[
-                        counter : (counter + self.num_steps - k)
-                    ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])
-                else:
-                    M_evals[k, k:, :, :] = M_evals_all[
-                        counter : (counter + self.num_steps + 1 - k), :, :
-                    ]
-                    derivative_M_evals[k, k:-1, :, :] = (M_evals_all[
-                        counter + 1 : (counter + self.num_steps + 1 - k), :, :
-                    ] - M_evals_all[
-                        counter : (counter + self.num_steps - k), :, :
-                    ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])[:,None,None]
-                counter += self.num_steps + 1 - k
+            # counter = 0
+            # for k, t in enumerate(self.ts):
+            #     if diagonal_M:
+            #         M_evals[k, k:, :] = M_evals_all[
+            #             counter : (counter + self.num_steps + 1 - k), :
+            #         ]
+            #         derivative_M_evals[k, k:-1, :] = (M_evals_all[
+            #             counter + 1 : (counter + self.num_steps + 1 - k), :
+            #         ] - M_evals_all[
+            #             counter : (counter + self.num_steps - k), :
+            #         ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])[:,None]
+            #     elif scalar_M:
+            #         M_evals[k, k:] = M_evals_all[
+            #             counter : (counter + self.num_steps + 1 - k)
+            #         ]
+            #         derivative_M_evals[k, k:-1] = (M_evals_all[
+            #             counter + 1 : (counter + self.num_steps + 1 - k)
+            #         ] - M_evals_all[
+            #             counter : (counter + self.num_steps - k)
+            #         ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])
+            #     else:
+            #         M_evals[k, k:, :, :] = M_evals_all[
+            #             counter : (counter + self.num_steps + 1 - k), :, :
+            #         ]
+            #         derivative_M_evals[k, k:-1, :, :] = (M_evals_all[
+            #             counter + 1 : (counter + self.num_steps + 1 - k), :, :
+            #         ] - M_evals_all[
+            #             counter : (counter + self.num_steps - k), :, :
+            #         ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])[:,None,None]
+            #     counter += self.num_steps + 1 - k
 
             if use_STL:
                 def inner_prod_STL(states, vector):
@@ -1510,80 +1603,81 @@ class SOC_Solver(nn.Module):
             identity = torch.eye(d).to(self.x0.device)
             dts = self.ts[1:] - self.ts[:-1]
 
-            if diagonal_M:
-                M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
-                    self.ts.device
-                )
-                derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
-                    self.ts.device
-                )
+            M_evals, derivative_M_evals = self.M_matrix_and_derivative(diagonal_M, scalar_M, d)
+            # if diagonal_M:
+            #     M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
+            #         self.ts.device
+            #     )
+            #     derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d).to(
+            #         self.ts.device
+            #     )
 
-            elif scalar_M:
-                M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
-                    self.ts.device
-                )
-                derivative_M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
-                    self.ts.device
-                )
+            # elif scalar_M:
+            #     M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
+            #         self.ts.device
+            #     )
+            #     derivative_M_evals = torch.zeros(len(self.ts), len(self.ts)).to(
+            #         self.ts.device
+            #     )
 
-            else:
-                M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
-                    self.ts.device
-                )
-                derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
-                    self.ts.device
-                )
+            # else:
+            #     M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
+            #         self.ts.device
+            #     )
+            #     derivative_M_evals = torch.zeros(len(self.ts), len(self.ts), d, d).to(
+            #         self.ts.device
+            #     )
 
-            s_vector = []
-            t_vector = []
-            for k, t in enumerate(self.ts):
-                s_vector.append(
-                    torch.linspace(t, self.T, self.num_steps + 1 - k).to(self.ts.device)
-                )
-                t_vector.append(
-                    t * torch.ones(self.num_steps + 1 - k).to(self.ts.device)
-                )
-                if use_stopping_time:
-                    stopping_timestep_vector.append(
-                        stopping_timestep.unsqueeze(0).repeat(self.num_steps + 1 - k, 1)
-                    )
-            s_vector = torch.cat(s_vector)
-            t_vector = torch.cat(t_vector)
+            # s_vector = []
+            # t_vector = []
+            # for k, t in enumerate(self.ts):
+            #     s_vector.append(
+            #         torch.linspace(t, self.T, self.num_steps + 1 - k).to(self.ts.device)
+            #     )
+            #     t_vector.append(
+            #         t * torch.ones(self.num_steps + 1 - k).to(self.ts.device)
+            #     )
+            #     if use_stopping_time:
+            #         stopping_timestep_vector.append(
+            #             stopping_timestep.unsqueeze(0).repeat(self.num_steps + 1 - k, 1)
+            #         )
+            # s_vector = torch.cat(s_vector)
+            # t_vector = torch.cat(t_vector)
 
-            M_evals_all = self.neural_sde.M(
-                t_vector,
-                s_vector,
-            )
-            counter = 0
-            for k, t in enumerate(self.ts):
-                if diagonal_M:
-                    M_evals[k, k:, :] = M_evals_all[
-                        counter : (counter + self.num_steps + 1 - k), :
-                    ]
-                    derivative_M_evals[k, k:-1, :] = (M_evals_all[
-                        counter + 1 : (counter + self.num_steps + 1 - k), :
-                    ] - M_evals_all[
-                        counter : (counter + self.num_steps - k), :
-                    ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])[:,None]
-                elif scalar_M:
-                    M_evals[k, k:] = M_evals_all[
-                        counter : (counter + self.num_steps + 1 - k)
-                    ]
-                    derivative_M_evals[k, k:-1] = (M_evals_all[
-                        counter + 1 : (counter + self.num_steps + 1 - k)
-                    ] - M_evals_all[
-                        counter : (counter + self.num_steps - k)
-                    ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])
-                else:
-                    M_evals[k, k:, :, :] = M_evals_all[
-                        counter : (counter + self.num_steps + 1 - k), :, :
-                    ]
-                    derivative_M_evals[k, k:-1, :, :] = (M_evals_all[
-                        counter + 1 : (counter + self.num_steps + 1 - k), :, :
-                    ] - M_evals_all[
-                        counter : (counter + self.num_steps - k), :, :
-                    ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])[:,None,None]
-                counter += self.num_steps + 1 - k
+            # M_evals_all = self.neural_sde.M(
+            #     t_vector,
+            #     s_vector,
+            # )
+            # counter = 0
+            # for k, t in enumerate(self.ts):
+            #     if diagonal_M:
+            #         M_evals[k, k:, :] = M_evals_all[
+            #             counter : (counter + self.num_steps + 1 - k), :
+            #         ]
+            #         derivative_M_evals[k, k:-1, :] = (M_evals_all[
+            #             counter + 1 : (counter + self.num_steps + 1 - k), :
+            #         ] - M_evals_all[
+            #             counter : (counter + self.num_steps - k), :
+            #         ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])[:,None]
+            #     elif scalar_M:
+            #         M_evals[k, k:] = M_evals_all[
+            #             counter : (counter + self.num_steps + 1 - k)
+            #         ]
+            #         derivative_M_evals[k, k:-1] = (M_evals_all[
+            #             counter + 1 : (counter + self.num_steps + 1 - k)
+            #         ] - M_evals_all[
+            #             counter : (counter + self.num_steps - k)
+            #         ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])
+            #     else:
+            #         M_evals[k, k:, :, :] = M_evals_all[
+            #             counter : (counter + self.num_steps + 1 - k), :, :
+            #         ]
+            #         derivative_M_evals[k, k:-1, :, :] = (M_evals_all[
+            #             counter + 1 : (counter + self.num_steps + 1 - k), :, :
+            #         ] - M_evals_all[
+            #             counter : (counter + self.num_steps - k), :, :
+            #         ]) / (s_vector[counter + 1 : (counter + self.num_steps + 1 - k)] - s_vector[counter : (counter + self.num_steps - k)])[:,None,None]
+            #     counter += self.num_steps + 1 - k
 
             if use_STL:
                 def inner_prod_STL(states, vector):
@@ -1929,13 +2023,25 @@ class SOC_Solver(nn.Module):
         else:
             norm_sqd_diff = None
 
-        if compute_control_objective:
+        if compute_control_objective and compute_exp_control_objective_STL:
+            ctrl_loss_mean, ctrl_loss_std_err, control_objective_STL_mean, control_objective_STL_std_err, exp_control_objective_STL_mean, exp_control_objective_STL_std_err, trajectory = self.control_objective(
+                batch_size, total_n_samples=total_n_samples, compute_exp_control_objective_STL=True
+            )
+        elif compute_control_objective and not compute_exp_control_objective_STL:
             ctrl_loss_mean, ctrl_loss_std_err, trajectory = self.control_objective(
                 batch_size, total_n_samples=total_n_samples
             )
+            control_objective_STL_mean = None
+            control_objective_STL_std_err = None
+            exp_control_objective_STL_mean = None
+            exp_control_objective_STL_std_err = None
         else:
             ctrl_loss_mean = None
             ctrl_loss_std_err = None
+            control_objective_STL_mean = None
+            control_objective_STL_std_err = None
+            exp_control_objective_STL_mean = None
+            exp_control_objective_STL_std_err = None
             trajectory = None
 
         if verbose:
@@ -1954,6 +2060,10 @@ class SOC_Solver(nn.Module):
             norm_sqd_diff,
             ctrl_loss_mean,
             ctrl_loss_std_err,
+            control_objective_STL_mean,
+            control_objective_STL_std_err,
+            exp_control_objective_STL_mean,
+            exp_control_objective_STL_std_err,
             trajectory,
             torch.mean(weight),
             torch.std(weight),

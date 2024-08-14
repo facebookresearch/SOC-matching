@@ -149,12 +149,12 @@ def plot_loss(
         print(
             f"variable: {variable}, algorithm: {algorithm}, plots_folder_name: {plots_folder_name}"
         )
-        if (
-            variable == "control_objective_mean"
-            and algorithm == "variance"
-            and cfg.method.setting != "molecular_dynamics"
-        ):
-            continue
+        # if (
+        #     variable == "control_objective_mean"
+        #     and algorithm == "variance"
+        #     and cfg.method.setting != "molecular_dynamics"
+        # ):
+        #     continue
         if variable == "control_objective_mean":
             variable_array = (
                 torch.stack(training_info[variable])
@@ -310,8 +310,8 @@ def main(cfg: DictConfig):
         "SOCM_sc_2B": "SOCM Scalar " + r"$M_t(T)=0$",
         "UW_SOCM_sc_2B": "UW-SOCM Scalar " + r"$M_t(T)=0$",
         "SOCM_adjoint": "SOCM-Adjoint",
-        "work_adjoint": "Work Adjoint",
-        "work_adjoint_STL": "Work Adjoint STL",
+        "work_adjoint": "Adj. Matching",
+        "work_adjoint_STL": "Adj. Matching STL",
         "continuous_adjoint": "Cont. Adjoint",
         "continuous_adjoint_STL": "Cont. Adjoint STL",
         "discrete_adjoint": "Disc. Adjoint",
@@ -476,9 +476,39 @@ def main(cfg: DictConfig):
             "reinf_unadj",
         ]
     elif cfg.method.plot_number == 7:
-        alg_list = [
-            "variance",
-        ]
+        # alg_list = [
+        #     "variance",
+        # ]
+        if cfg.method.setting == "sampling_funnel":
+            alg_list = [
+                "UW_SOCM",
+                "work_adjoint_STL",
+                "continuous_adjoint_STL",
+                "discrete_adjoint",
+                "log-variance",
+                "moment",
+                "reinf",
+                "reinf_fr",
+                "SOCM_cost",
+                "SOCM_work",
+            ]
+        else:
+            alg_list = [
+                "SOCM",
+                "UW_SOCM",
+                "SOCM_adjoint",
+                "work_adjoint_STL",
+                "continuous_adjoint_STL",
+                "discrete_adjoint",
+                "cross_entropy",
+                "log-variance",
+                "moment",
+                "variance",
+                "reinf",
+                "reinf_fr",
+                "SOCM_cost",
+                "SOCM_work",
+            ]
     elif cfg.method.plot_number == 8:
         #To show all algorithms in the SOCM paper
         alg_list = [
@@ -564,6 +594,24 @@ def main(cfg: DictConfig):
             "SOCM_work_diag_2B",
             "SOCM_work_diag_2B_STL",
         ]
+    elif cfg.method.plot_number == 13:
+        alg_list = [
+            "work_adjoint",
+            "work_adjoint_STL",
+            "continuous_adjoint",
+            "continuous_adjoint_STL",
+            "discrete_adjoint",
+            "discrete_adjoint_STL",
+        ]
+    elif cfg.method.plot_number == 14:
+        alg_list = [
+            "SOCM_cost",
+            "SOCM_cost_diag",
+            "SOCM_cost_diag_2B",
+            "SOCM_work",
+            "SOCM_work_diag",
+            "SOCM_work_diag_2B",
+        ]
 
     file_name = "last"
     set_ylims = False
@@ -617,7 +665,7 @@ def main(cfg: DictConfig):
         last_algorithm["control_objective_mean"] = 7
         last_algorithm["EMA_norm_sqd_diff_optimal"] = 18
         if cfg.method.lmbd == 1:
-            title = r"Quadratic Ornstein Uhlenbeck, hard, no warm start ($d=20$)"
+            title = r"Quadratic Ornstein Uhlenbeck, hard ($d=20$)"
         else:
             title = fr"Quadratic Ornstein Uhlenbeck, hard, no warm start ($d=20$, $\lambda={cfg.method.lmbd}$)"
     elif cfg.method.setting == "OU_quadratic_no_state_cost":
@@ -637,7 +685,12 @@ def main(cfg: DictConfig):
         last_algorithm["EMA_grad_norm_sqd"] = 9
         last_algorithm["control_objective_mean"] = 7
         last_algorithm["EMA_norm_sqd_diff_optimal"] = 17
-        title = r"Double Well ($d=10$)"
+        if cfg.method.lmbd == 1:
+            title = r"Double Well, easy ($d=10$)"
+        elif cfg.method.lmbd == 0.5:
+            title = r"Double Well, hard ($d=10$)"
+        else:
+            title = r"Double Well ($d=10$)"
     elif cfg.method.setting == "molecular_dynamics":
         last_algorithm["EMA_grad_norm_sqd"] = 8
         last_algorithm["control_objective_mean"] = 8
@@ -645,17 +698,17 @@ def main(cfg: DictConfig):
         title = r"Molecular dynamics ($d=1$)"
     elif cfg.method.setting == "sampling_funnel":
         last_algorithm["EMA_grad_norm_sqd"] = -1
-        last_algorithm["control_objective_mean"] = -1
+        last_algorithm["control_objective_mean"] = 18
         plot_norm_sqd_diff = False
         title = r"Sampling Funnel Distribution ($d=10$)"
     elif cfg.method.setting == "sampling_cox":
-        last_algorithm["EMA_grad_norm_sqd"] = -1
-        last_algorithm["control_objective_mean"] = -1
+        last_algorithm["EMA_grad_norm_sqd"] = 18
+        last_algorithm["control_objective_mean"] = 18
         plot_norm_sqd_diff = False
         title = r"Sampling Log Gaussian Cox Process ($d=1600$)"
     elif cfg.method.setting == "sampling_MG":
-        last_algorithm["EMA_grad_norm_sqd"] = -1
-        last_algorithm["control_objective_mean"] = -1
+        last_algorithm["EMA_grad_norm_sqd"] = 18
+        last_algorithm["control_objective_mean"] = 18
         plot_norm_sqd_diff = False
         title = r"Sampling Multivariate Gaussian Distribution ($d=2$)"
 

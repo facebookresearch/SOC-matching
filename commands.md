@@ -44,6 +44,8 @@ To get the plots:
 To run the algorithms:
 
 `python main.py method.algorithm='SOCM','UW_SOCM','UW_SOCM_diag','UW_SOCM_diag_2B','SOCM_const_M','SOCM_adjoint','work_adjoint','discrete_adjoint','cross_entropy','log-variance','moment','variance','reinf','reinf_fr','SOCM_cost','SOCM_cost_diag','SOCM_cost_diag_2B','reinf_unadj','SOCM_work','SOCM_work_diag','SOCM_work_diag_2B' method.lmbd=1.0 method.setting='OU_quadratic_no_state_cost' method.gamma=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.num_iterations=60000 method.save_every=10 -m`
+<!-- `python main.py method.algorithm='SOCM' method.lmbd=1.0 method.setting='OU_quadratic_no_state_cost' method.gamma=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.num_iterations=60000 method.save_every=10 -m`
+`python main.py method.algorithm='SOCM' method.lmbd=1.0 method.setting='OU_quadratic_no_state_cost' method.gamma=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.num_iterations=60000 method.save_every=10 method.efficient_memory=True method.output_matrix=False hydra.sweep.dir='./outputs_2/multiruns' hydra.sweep.subdir='OU_quadratic_no_state_cost' -m` -->
 
 To get the plots:
 
@@ -52,17 +54,25 @@ To get the plots:
 ## Sampling Funnel
 <!-- `python main.py method.algorithm='discrete_adjoint' method.d=10 method.T=5.0 method.num_steps=100 method.lmbd=1.0 method.setting='sampling_funnel' method.gamma=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.num_iterations=60000 method.save_every=10` -->
 To run the algorithms:
-
-`python main.py method.algorithm='SOCM','UW_SOCM','UW_SOCM_diag','UW_SOCM_diag_2B','SOCM_const_M','SOCM_adjoint','work_adjoint','discrete_adjoint','cross_entropy','log-variance','moment','variance','reinf','reinf_fr','SOCM_cost','SOCM_cost_diag','SOCM_cost_diag_2B','reinf_unadj','SOCM_work','SOCM_work_diag','SOCM_work_diag_2B' method.d=10 method.T=5.0 method.num_steps=100 method.lmbd=1.0 method.setting='sampling_funnel' method.gamma=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.num_iterations=60000 method.save_every=10 -m`
+<!-- `python main.py method.algorithm='SOCM','UW_SOCM','UW_SOCM_diag','UW_SOCM_diag_2B','SOCM_const_M','SOCM_adjoint','work_adjoint','discrete_adjoint','cross_entropy','log-variance','moment','variance','reinf','reinf_fr','SOCM_cost','SOCM_cost_diag','SOCM_cost_diag_2B','reinf_unadj','SOCM_work','SOCM_work_diag','SOCM_work_diag_2B' method.d=10 method.T=5.0 method.num_steps=100 method.lmbd=1.0 method.setting='sampling_funnel' method.gamma=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.num_iterations=60000 method.save_every=10 -m` -->
+`python main.py method.algorithm='SOCM','UW_SOCM','SOCM_identity','UW_SOCM_identity','SOCM_diag','UW_SOCM_diag','SOCM_diag_2B','UW_SOCM_diag_2B','SOCM_sc','UW_SOCM_sc','SOCM_sc_2B','UW_SOCM_sc_2B','SOCM_adjoint','work_adjoint','work_adjoint_STL','continuous_adjoint','continuous_adjoint_STL','discrete_adjoint','discrete_adjoint_STL','cross_entropy','log-variance','moment','variance','reinf','reinf_fr','SOCM_cost','SOCM_cost_diag','SOCM_cost_diag_2B','reinf_unadj','SOCM_work','SOCM_work_diag','SOCM_work_diag_2B' method.d=10 method.T=5.0 method.num_steps=100 method.lmbd=1.0 method.setting='sampling_funnel' method.gamma=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.num_iterations=60000 method.save_every=10 method.efficient_memory=True method.output_matrix=False hydra.sweep.dir='./outputs_2/multiruns' hydra.sweep.subdir='sampling_funnel' -m`
+<!-- `python main.py method.algorithm='SOCM' method.d=10 method.T=5.0 method.num_steps=100 method.lmbd=1.0 method.setting='sampling_funnel' method.gamma=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.num_iterations=60000 method.save_every=10 method.efficient_memory=True method.output_matrix=False hydra.sweep.dir='./outputs_2/multiruns' hydra.sweep.subdir='sampling_funnel' -m` -->
 
 To get the plots:
 
 `python plots.py method.d=10 method.T=5.0 method.num_steps=100 method.lmbd=1.0 method.setting='sampling_funnel' method.gamma=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.save_every=10 method.plot_number=9`
 
 ## Sampling Cox
-`python main.py method.algorithm='UW_SOCM' method.d=1600 method.lmbd=1.0 method.T=5.0 method.num_steps=100 method.setting='sampling_cox' method.gamma=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.num_iterations=60000 method.efficient_memory=True method.output_matrix=False`
+`python main.py method.algorithm='work_adjoint' method.d=1600 method.lmbd=1.0 method.T=5.0 method.num_steps=100 method.setting='sampling_cox' method.gamma=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.num_iterations=60000 method.efficient_memory=True method.output_matrix=False`
 
 ## Sampling MG
-`python main.py method.algorithm='discrete_adjoint' method.d=2 method.lmbd=1.0 method.T=5.0 method.num_steps=100 method.setting='sampling_MG' method.gamma=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.num_iterations=60000`
+<!-- `python main.py method.algorithm='discrete_adjoint' method.d=2 method.lmbd=1.0 method.T=5.0 method.num_steps=100 method.setting='sampling_MG' method.gamma=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.num_iterations=60000` -->
+`python main.py method.algorithm='UW_SOCM' method.d=2 method.lmbd=1.0 method.T=5.0 method.num_steps=100 method.setting='sampling_MG' method.gamma=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.num_iterations=60000 method.save_every=10 method.efficient_memory=True method.output_matrix=False hydra.sweep.dir='./outputs_2/multiruns' hydra.sweep.subdir='sampling_MG' -m`
+`python main.py method.algorithm='SOCM','UW_SOCM','SOCM_identity','UW_SOCM_identity','SOCM_diag','UW_SOCM_diag','SOCM_diag_2B','UW_SOCM_diag_2B','SOCM_sc','UW_SOCM_sc','SOCM_sc_2B','UW_SOCM_sc_2B','SOCM_adjoint','work_adjoint','work_adjoint_STL','continuous_adjoint','continuous_adjoint_STL','discrete_adjoint','discrete_adjoint_STL','cross_entropy','log-variance','moment','variance','reinf','reinf_fr','SOCM_cost','SOCM_cost_diag','SOCM_cost_diag_2B','reinf_unadj','SOCM_work','SOCM_work_diag','SOCM_work_diag_2B' method.d=2 method.lmbd=1.0 method.T=5.0 method.num_steps=100 method.setting='sampling_MG' method.gamma=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.num_iterations=60000 method.save_every=10 method.efficient_memory=True method.output_matrix=False hydra.sweep.dir='./outputs_2/multiruns' hydra.sweep.subdir='sampling_MG' -m`
 
 `python plots.py method.d=2 method.T=5.0 method.num_steps=100 method.lmbd=1.0 method.setting='sampling_MG' method.gamma=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.save_every=10 method.plot_number=9`
+
+## PIS Gaussians
+To run the algorithms:
+
+`python main.py method.algorithm='discrete_adjoint','SOCM','cross_entropy' method.lmbd=1.0 method.setting='pis_gaussians' method.gamma=2.0 method.scaling_factor_M=0.1 optim.M_lr=1e-3 optim.batch_size=128 method.num_iterations=80000 method.save_every=10 method.efficient_memory=True method.output_matrix=False hydra.sweep.dir='./outputs_2/multiruns' hydra.sweep.subdir='pis_gaussians' method.d=2 -m`

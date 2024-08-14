@@ -177,6 +177,8 @@ def main(cfg: DictConfig):
     M_algorithms = ["SOCM", "UW_SOCM", "SOCM_sc", "UW_SOCM_sc", "SOCM_sc_2B", "UW_SOCM_sc_2B",
                     "SOCM_diag", "UW_SOCM_diag", "SOCM_diag_2B", "UW_SOCM_diag_2B",
                     "UW_SOCM_no_v", "UW_SOCM_no_nabla_b_term", "UW_SOCM_no_noise",
+                    "UW_SOCM_plus", "UW_SOCM_plus_STL", "UW_SOCM_plus_diag", "UW_SOCM_plus_diag_STL", 
+                    "UW_SOCM_plus_sc", "UW_SOCM_plus_sc_STL",
                     "SOCM_cost","SOCM_cost_sc","SOCM_cost_sc_2B","SOCM_cost_diag","SOCM_cost_diag_2B",
                     "SOCM_cost_STL","SOCM_cost_sc_STL","SOCM_cost_sc_2B_STL","SOCM_cost_diag_STL","SOCM_cost_diag_2B_STL",
                     "SOCM_work","SOCM_work_sc","SOCM_work_sc_2B","SOCM_work_diag","SOCM_work_diag_2B",
@@ -297,6 +299,15 @@ def main(cfg: DictConfig):
     if cfg.method.use_warm_start:
         training_info["restricted_control"] = u_warm_start
         training_info["trajectories"] = []
+    if cfg.method.setting == 'pis_gaussians':
+        pis_variables = [
+            'exp_control_objective_STL_mean',
+            'exp_control_objective_STL_std_err',
+            'control_objective_STL_mean',
+            'control_objective_STL_std_err'
+        ]
+        for var in pis_variables:
+            training_info[var] = []
     training_info["cfg"] = cfg
 
     compute_L2_error = ground_truth_control is not None
@@ -313,12 +324,17 @@ def main(cfg: DictConfig):
                     == cfg.method.compute_control_objective_every - 1
                     or itr == cfg.method.num_iterations - 1
                 )
+                compute_exp_control_objective_STL = compute_control_objective and cfg.method.setting == 'pis_gaussians'
                 verbose = itr == 0
                 (
                     loss,
                     norm_sqd_diff,
                     control_objective_mean,
                     control_objective_std_err,
+                    control_objective_STL_mean,
+                    control_objective_STL_std_err,
+                    exp_control_objective_STL_mean,
+                    exp_control_objective_STL_std_err,
                     trajectory,
                     weight_mean,
                     weight_std,
@@ -329,12 +345,14 @@ def main(cfg: DictConfig):
                     algorithm=algorithm,
                     optimal_control=ground_truth_control,
                     compute_control_objective=compute_control_objective,
+                    compute_exp_control_objective_STL=compute_exp_control_objective_STL,
                     total_n_samples=cfg.method.n_samples_control,
                     verbose=verbose,
                     u_warm_start=u_warm_start,
                     use_warm_start=cfg.method.use_warm_start,
                     use_stopping_time=cfg.method.use_stopping_time,
                     efficient_memory=cfg.method.efficient_memory,
+                    itr=itr,
                 )
 
                 if compute_L2_error:
@@ -572,6 +590,25 @@ def main(cfg: DictConfig):
                         )
                         training_info["control_objective_itr"].append(itr + 1)
                         training_info["trajectories"].append(trajectory)
+                        if cfg.method.setting == 'pis_gaussians':
+                            print(
+                                f"Control objective STL mean: {control_objective_STL_mean:5.5f}, Control objective STL std. error: {control_objective_STL_std_err:5.5f}"
+                            )
+                            print(
+                                f"Exp. control objective STL mean: {exp_control_objective_STL_mean:5.5f}, Exp. control objective STL std. error: {exp_control_objective_STL_std_err:5.5f}"
+                            )
+                            training_info["exp_control_objective_STL_mean"].append(
+                                exp_control_objective_STL_mean.detach()
+                            )
+                            training_info["exp_control_objective_STL_std_err"].append(
+                                exp_control_objective_STL_std_err.detach()
+                            )
+                            training_info["control_objective_STL_mean"].append(
+                                control_objective_STL_mean.detach()
+                            )
+                            training_info["control_objective_STL_std_err"].append(
+                                control_objective_STL_std_err.detach()
+                            )
 
                         soc_solver.num_iterations = itr + 1
 
